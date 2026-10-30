@@ -39,8 +39,19 @@ uv run python tools.py
 
 ## Roadmap
 
+Today it runs on sample e-commerce order data. The goal is to make it **configurable by industry** for small businesses that get a lot of repetitive emails, each with its own prompts, tools and data:
+
+- **Law firms:** case status, appointments
+- **Accounting firms:** document requests, tax deadlines
+- **Online course creators:** enrollment, access issues
+- **Sales / customer support teams**
+
+Next steps:
+
+- [ ] Industry configuration (prompts, tools and data per industry)
+- [ ] Move orders and processed emails from CSV / memory to a real database
 - [ ] Connect a real inbox (Gmail API) instead of the JSON endpoint
 - [ ] Classify emails by intent and urgency before drafting
-- [ ] Persist processed IDs in a database instead of memory
-- [ ] Evaluate draft quality on a set of sample emails
+- [ ] Evaluate draft quality per industry
+- [ ] Review panel to approve or edit drafts before sending
 - [ ] Deploy and add monitoring / tracing
