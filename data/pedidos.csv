@@ -1,0 +1,5 @@
+order_id,email,producto,estado,fecha_estimada
+1001,ana@ejemplo.com,Remera talle M,entregado,2026-10-10
+1002,cliente@ejemplo.com,Zapatillas running,en_camino,2026-10-28
+1003,juan@ejemplo.com,Mochila urbana,demorado,2026-11-05
+1004,cliente@ejemplo.com,Campera rompevientos,preparando,2026-10-31
