@@ -24,13 +24,11 @@ Después, en main.py:
 - La respuesta de un mail nuevo suma el campo "draft" con el borrador.
 """
 
-import json
-
 import anthropic
 
 from models import Borrador, Email
 from perfiles import PERFILES, Perfil
-from tools import buscar_pedido
+from tools import ejecutar_tool
 
 # Inicializo la instancia
 cliente = anthropic.AsyncAnthropic()
@@ -94,12 +92,7 @@ async def draft_reply(email: Email, perfil: str = "tienda") -> Borrador:
         tools_results = []
         for block in response.content:
             if block.type == "tool_use":
-                contenido = buscar_pedido(block.input["order_id"], email.sender)
-                texto = (
-                    json.dumps(contenido, ensure_ascii=False)
-                    if contenido
-                    else "No se encontró un pedido con ese número para este cliente."
-                )
+                texto = ejecutar_tool(block.name, block.input, email)
                 tools_results += [
                     {
                         "type": "tool_result",

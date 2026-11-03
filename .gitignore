@@ -9,3 +9,6 @@ __pycache__/
 credentials.json
 token.json
 procesados.json
+
+# Base de ejemplo: se genera sola desde data/pedidos.csv y db.py
+data/*.db

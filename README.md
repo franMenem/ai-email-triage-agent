@@ -26,7 +26,29 @@ Each profile has its own system prompt and tools, and is chosen with `--perfil`.
 | Profile | Use | Tools |
 |---|---|---|
 | `freelance` (default) | Replies to my own clients. Never promises dates, prices or availability: it leaves gaps like `[completar: horarios disponibles]` for me to fill in. | — |
-| `tienda` | Demo: customer support for an online store. | `buscar_pedido` (order lookup) |
+| `tienda` | Demo: customer support for an online store, answering from its database. | `buscar_pedido` (orders), `buscar_politica` (returns, shipping, payments…) |
+
+## Answers from your own data
+
+The agent doesn't answer from memory: it calls **tools** that query a database, and only replies with what they return. The `tienda` profile ships with a sample SQLite database (`db.py`, created automatically from `data/pedidos.csv`) with orders and store policies.
+
+Example: a customer asks *"When do the sneakers from order 1002 arrive? And if they don't fit, how do I return them?"*. Claude decides on its own to call:
+
+```
+- buscar_pedido   {'order_id': '1002'}     -> {"producto": "Zapatillas running", "estado": "en_camino", ...}
+- buscar_politica {'tema': 'devoluciones'} -> "Se aceptan devoluciones hasta 30 días después de la entrega..."
+```
+
+and drafts a reply using only those two results, noting in the internal notes what information was missing.
+
+### Connect your own database
+
+1. **Connection:** change `conectar_db()` in `db.py` to your database (Postgres, Supabase, MySQL…). It's the only file that knows where the data lives.
+2. **Query:** add a function in `tools.py` with a parameterized query (`?` placeholders, never f-strings, so there's no SQL injection). Decide permissions **here, in code**: for example, filter by `email.sender` so a customer can only see their own records.
+3. **Describe it to Claude:** add its definition (`TOOL_...`: name, when to use it, input schema) and register the function in `EJECUTORES`.
+4. **Enable it:** add the tool to a profile in `perfiles.py` and mention it in that profile's prompt.
+
+The drafting loop in `drafter.py` doesn't change: it runs whatever tool Claude asks for.
 
 ## Security by design
 
@@ -36,7 +58,7 @@ The system prompt is treated as public: it will leak sooner or later, so nothing
 |---|---|
 | A human approves every reply. The code has no function that sends email. | `gmail_client.py` |
 | Authorization in code: `buscar_pedido` only returns an order if the order number **and** the sender match, whatever the model asks for. | `tools.py` |
-| Read-only tools. | `tools.py` |
+| Read-only tools with parameterized SQL queries (tested against SQL injection). | `tools.py` |
 | The email is wrapped in `<email>` tags and treated as untrusted data, not instructions. | `drafter.py` + prompt |
 | Defensive prompt: no revealing instructions, no data from other clients, flag manipulation attempts with `ALERTA:`. | `prompts.py` |
 | Secrets (`.env`, `credentials.json`, `token.json`) are never committed. | `.gitignore` |
@@ -111,12 +133,12 @@ The tests replace the LLM call with a fake, so they are free, fast and don't nee
 uv run python test_main.py          # endpoint, validation, idempotency
 uv run python test_errores.py       # API errors: 503 retryable vs 500, failed email can be retried
 uv run python test_clasificacion.py # intent/urgency schema and validation
-uv run python tools.py              # order lookup, including "can't see someone else's order"
+uv run python tools.py              # database tools: someone else's order, SQL injection, unknown tool
 ```
 
 ## Stack
 
-Python 3.12 · Anthropic SDK (Claude, tool calling, structured outputs) · Gmail API (OAuth) · FastAPI · Pydantic · uv
+Python 3.12 · Anthropic SDK (Claude, tool calling, structured outputs) · Gmail API (OAuth) · SQLite · FastAPI · Pydantic · uv
 
 ## Roadmap
 
@@ -125,7 +147,8 @@ Python 3.12 · Anthropic SDK (Claude, tool calling, structured outputs) · Gmail
 - [x] Defensive prompt + prompt-injection test
 - [x] Real Gmail inbox: reads labeled emails, leaves drafts in the thread
 - [x] Profiles per use case (prompt + tools)
+- [x] Answers from a database through tools (sample SQLite, swappable for any database)
 - [ ] Run on its own every few minutes, and later Gmail push notifications (`watch`) instead of polling
-- [ ] Connect real data per profile (database or documents/RAG) so replies use verified information
+- [ ] Documents/FAQ search (RAG) for questions that aren't in a table
 - [ ] Evaluate draft quality per profile
 - [ ] Deploy with monitoring and tracing
