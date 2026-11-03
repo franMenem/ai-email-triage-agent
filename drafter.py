@@ -29,8 +29,8 @@ import json
 import anthropic
 
 from models import Borrador, Email
-from prompts import SYSTEM_PROMPT
-from tools import TOOL_BUSCAR_PEDIDO, buscar_pedido
+from perfiles import PERFILES, Perfil
+from tools import buscar_pedido
 
 # Inicializo la instancia
 cliente = anthropic.AsyncAnthropic()
@@ -56,12 +56,13 @@ SCHEMA_BORRADOR = {
 }
 
 
-async def llamar_a_claude(messages):
+async def llamar_a_claude(messages, perfil: Perfil):
+    # La API no acepta tools=[]: si el perfil no tiene tools, no se manda el parámetro
+    extra = {"tools": perfil.tools} if perfil.tools else {}
     return await cliente.messages.create(
         max_tokens=16000,
         model="claude-opus-5-5",
-        system=SYSTEM_PROMPT,
-        tools=[TOOL_BUSCAR_PEDIDO],
+        system=perfil.prompt,
         messages=messages,
         output_config={
             "format": {
@@ -69,10 +70,12 @@ async def llamar_a_claude(messages):
                 "schema": SCHEMA_BORRADOR,
             }
         },
+        **extra,
     )
 
 
-async def draft_reply(email: Email) -> Borrador:
+async def draft_reply(email: Email, perfil: str = "tienda") -> Borrador:
+    perfil = PERFILES[perfil]
     messages = [
         {
             "role": "user",
@@ -85,7 +88,7 @@ async def draft_reply(email: Email) -> Borrador:
             ),
         }
     ]
-    response = await llamar_a_claude(messages)
+    response = await llamar_a_claude(messages, perfil)
 
     while response.stop_reason == "tool_use":
         tools_results = []
@@ -108,7 +111,7 @@ async def draft_reply(email: Email) -> Borrador:
             {"role": "assistant", "content": response.content},
             {"role": "user", "content": tools_results},
         ]
-        response = await llamar_a_claude(messages)
+        response = await llamar_a_claude(messages, perfil)
 
     # resultado = next(block for block in response.content if block.type == "text") esta es la forma cdo no tenemos un output estructurado
     resultado = Borrador.model_validate_json(
