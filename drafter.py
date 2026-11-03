@@ -34,7 +34,17 @@ from tools import TOOL_BUSCAR_PEDIDO, buscar_pedido
 
 # Inicializo la instancia
 cliente = anthropic.AsyncAnthropic()
-
+SCHEMA_BORRADOR = {
+                    "type": "object",
+                    "properties": {
+                        "borrador": {"type": "string"},
+                        "notas_internas": {"type": "string"},
+                        "intencion" : {"type": "string", "enum": ["estado_pedido", "devolucion", "reclamo", "consulta_general", "otro"]},
+                        "urgencia" : {"type": "string", "enum": ["alta", "media", "baja"]},
+                    },
+                    "required": ["borrador", "notas_internas", "intencion", "urgencia"],
+                    "additionalProperties": False,
+                }
 
 async def llamar_a_claude(messages):
     return await cliente.messages.create(
@@ -46,15 +56,7 @@ async def llamar_a_claude(messages):
         output_config={
             "format": {
                 "type": "json_schema",
-                "schema": {
-                    "type": "object",
-                    "properties": {
-                        "borrador": {"type": "string"},
-                        "notas_internas": {"type": "string"},
-                    },
-                    "required": ["borrador", "notas_internas"],
-                    "additionalProperties": False,
-                },
+                "schema": SCHEMA_BORRADOR,
             }
         },
     )
@@ -64,7 +66,13 @@ async def draft_reply(email: Email) -> Borrador:
     messages = [
         {
             "role": "user",
-            "content": f"Subject: {email.subject}\n sender: {email.sender}\n body: {email.body}",
+            "content": (
+                f"<email>\n"
+                f"Remitente: {email.sender}\n"
+                f"Asunto: {email.subject}\n"
+                f"Cuerpo: {email.body}\n"
+                f"</email>"
+            ),
         }
     ]
     response = await llamar_a_claude(messages)

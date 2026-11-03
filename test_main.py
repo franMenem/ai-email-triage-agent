@@ -17,14 +17,14 @@ llamadas = []
 
 async def fake_draft_reply(email):
     llamadas.append(email.message_id)
-    return Borrador(borrador="BORRADOR DE PRUEBA", notas_internas="NOTAS DE PRUEBA")
+    return Borrador(borrador="BORRADOR DE PRUEBA", notas_internas="NOTAS DE PRUEBA", intencion="reclamo", urgencia="alta")
 
 
-main.draft_reply = fake_draft_reply  # el endpoint va a usar la falsa
 client = TestClient(main.app)
 
 
 def test_recibe_mail_valido():
+    main.draft_reply = fake_draft_reply  # el endpoint va a usar la falsa
     mail = {
         "message_id": "abc-1",
         "sender": "cliente@ejemplo.com",
@@ -38,10 +38,13 @@ def test_recibe_mail_valido():
         "message_id": "abc-1",
         "draft": "BORRADOR DE PRUEBA",
         "notas": "NOTAS DE PRUEBA",
+        "intencion": "reclamo",
+        "urgencia": "alta"
     }
 
 
 def test_falta_un_campo_da_422_y_no_llama_al_llm():
+    main.draft_reply = fake_draft_reply  # el endpoint va a usar la falsa
     mail_incompleto = {"message_id": "abc-2", "sender": "cliente@ejemplo.com"}
     respuesta = client.post("/emails", json=mail_incompleto)
     assert respuesta.status_code == 422
@@ -49,6 +52,7 @@ def test_falta_un_campo_da_422_y_no_llama_al_llm():
 
 
 def test_duplicado_no_vuelve_a_llamar_al_llm():
+    main.draft_reply = fake_draft_reply  # el endpoint va a usar la falsa
     mail = {
         "message_id": "abc-3",
         "sender": "cliente@ejemplo.com",

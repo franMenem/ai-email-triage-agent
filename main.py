@@ -50,6 +50,8 @@ async def receive(email: Email):
                 "message_id": email.message_id,
                 "draft": draft.borrador,
                 "notas": draft.notas_internas,
+                "intencion": draft.intencion,
+                "urgencia": draft.urgencia,
             }
         else:
             return {
