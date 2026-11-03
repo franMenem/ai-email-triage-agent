@@ -8,3 +8,4 @@ __pycache__/
 # Credenciales de Gmail (OAuth): nunca subir
 credentials.json
 token.json
+procesados.json
