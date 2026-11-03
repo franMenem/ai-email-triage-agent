@@ -17,7 +17,12 @@ llamadas = []
 
 async def fake_draft_reply(email):
     llamadas.append(email.message_id)
-    return Borrador(borrador="BORRADOR DE PRUEBA", notas_internas="NOTAS DE PRUEBA", intencion="reclamo", urgencia="alta")
+    return Borrador(
+        borrador="BORRADOR DE PRUEBA",
+        notas_internas="NOTAS DE PRUEBA",
+        intencion="reclamo",
+        urgencia="alta",
+    )
 
 
 client = TestClient(main.app)
@@ -39,7 +44,7 @@ def test_recibe_mail_valido():
         "draft": "BORRADOR DE PRUEBA",
         "notas": "NOTAS DE PRUEBA",
         "intencion": "reclamo",
-        "urgencia": "alta"
+        "urgencia": "alta",
     }
 
 

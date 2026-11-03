@@ -4,3 +4,7 @@ __pycache__/
 *.pyc
 .ruff_cache/
 .DS_Store
+
+# Credenciales de Gmail (OAuth): nunca subir
+credentials.json
+token.json

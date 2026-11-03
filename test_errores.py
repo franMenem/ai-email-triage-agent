@@ -66,7 +66,12 @@ def fake_que_falla(error):
 
 
 async def fake_ok(email):
-    return Borrador(borrador="BORRADOR OK", notas_internas="NOTAS OK", intencion="consulta_general", urgencia="alta")
+    return Borrador(
+        borrador="BORRADOR OK",
+        notas_internas="NOTAS OK",
+        intencion="consulta_general",
+        urgencia="alta",
+    )
 
 
 def mail(message_id):

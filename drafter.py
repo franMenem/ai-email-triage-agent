@@ -35,16 +35,26 @@ from tools import TOOL_BUSCAR_PEDIDO, buscar_pedido
 # Inicializo la instancia
 cliente = anthropic.AsyncAnthropic()
 SCHEMA_BORRADOR = {
-                    "type": "object",
-                    "properties": {
-                        "borrador": {"type": "string"},
-                        "notas_internas": {"type": "string"},
-                        "intencion" : {"type": "string", "enum": ["estado_pedido", "devolucion", "reclamo", "consulta_general", "otro"]},
-                        "urgencia" : {"type": "string", "enum": ["alta", "media", "baja"]},
-                    },
-                    "required": ["borrador", "notas_internas", "intencion", "urgencia"],
-                    "additionalProperties": False,
-                }
+    "type": "object",
+    "properties": {
+        "borrador": {"type": "string"},
+        "notas_internas": {"type": "string"},
+        "intencion": {
+            "type": "string",
+            "enum": [
+                "estado_pedido",
+                "devolucion",
+                "reclamo",
+                "consulta_general",
+                "otro",
+            ],
+        },
+        "urgencia": {"type": "string", "enum": ["alta", "media", "baja"]},
+    },
+    "required": ["borrador", "notas_internas", "intencion", "urgencia"],
+    "additionalProperties": False,
+}
+
 
 async def llamar_a_claude(messages):
     return await cliente.messages.create(
