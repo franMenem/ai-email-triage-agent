@@ -13,6 +13,8 @@ Run it with: uv run python gmail_client.py   (doesn't call the Claude API)
 
 import base64
 import re
+import sys
+from datetime import datetime
 from email.message import EmailMessage
 from email.utils import parseaddr
 from html.parser import HTMLParser
@@ -31,6 +33,8 @@ SCOPES = [
 ]
 # Gmail label that a filter puts on the emails the agent should handle
 AGENT_LABEL = "agente"
+# Pub/Sub topic where Gmail publishes a notification when a labeled email arrives
+PUBSUB_TOPIC = "projects/ai-email-triage-agent-513617/topics/gmail-agent"
 # How much of the thread Claude sees: the last N earlier messages, each cut to M characters
 THREAD_MAX_MESSAGES = 10
 THREAD_MAX_CHARS = 2000
@@ -216,7 +220,37 @@ def create_draft(service, message_id, text):
     )
 
 
+def label_id(service, name):
+    """Gmail APIs take label IDs (e.g. "Label_12"), not names: finds the ID of `name`."""
+    labels = service.users().labels().list(userId="me").execute()["labels"]
+    for label in labels:
+        if label["name"] == name:
+            return label["id"]
+    raise ValueError(f"There is no Gmail label called {name!r}")
+
+
+def start_watch(service):
+    """Asks Gmail to publish to PUBSUB_TOPIC whenever an email gets the agent label.
+
+    A watch lasts 7 days: it must be renewed before `expiration` (calling this again
+    renews it). Returns {"historyId": ..., "expiration": <milliseconds since 1970>}.
+    """
+    body = {
+        "topicName": PUBSUB_TOPIC,
+        "labelIds": [label_id(service, AGENT_LABEL)],
+        "labelFilterBehavior": "include",
+    }
+    return service.users().watch(userId="me", body=body).execute()
+
+
 if __name__ == "__main__":
+    if "--watch" in sys.argv:
+        # uv run python gmail_client.py --watch   -> starts (or renews) the Gmail watch
+        response = start_watch(connect())
+        expires = datetime.fromtimestamp(int(response["expiration"]) / 1000)
+        print(f"Watch active. historyId={response['historyId']} | expires {expires:%Y-%m-%d %H:%M}")
+        sys.exit()
+
     service = connect()
     profile = service.users().getProfile(userId="me").execute()
     print("Connected as:", profile["emailAddress"])
