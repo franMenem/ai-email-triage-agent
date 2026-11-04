@@ -1,0 +1,5 @@
+order_id,email,product,status,estimated_delivery
+1001,ana@example.com,T-shirt size M,delivered,2026-10-10
+1002,customer@example.com,Running sneakers,in_transit,2026-11-12
+1003,juan@example.com,Urban backpack,delayed,2026-11-20
+1004,customer@example.com,Windbreaker jacket,preparing,2026-11-15

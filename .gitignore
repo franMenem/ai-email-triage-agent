@@ -5,10 +5,10 @@ __pycache__/
 .ruff_cache/
 .DS_Store
 
-# Credenciales de Gmail (OAuth): nunca subir
+# Gmail OAuth credentials: never commit
 credentials.json
 token.json
-procesados.json
+processed.json
 
-# Base de ejemplo: se genera sola desde data/pedidos.csv y db.py
+# Sample database: generated automatically from data/orders.csv and db.py
 data/*.db

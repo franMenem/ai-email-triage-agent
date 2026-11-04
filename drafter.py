@@ -1,114 +1,94 @@
 """
-Agente de mails — Paso 2: Claude redacta el borrador
-====================================================
+Claude writes the draft reply for an email.
 
-Implementá `draft_reply(email)`: recibe un `Email` y devuelve (str) un
-borrador de respuesta escrito por Claude. Rubro: atención al cliente.
-
-Requisitos:
-1) Usá el cliente ASYNC del SDK oficial (`anthropic.AsyncAnthropic`), creado
-   UNA sola vez a nivel módulo (no en cada llamada). La API key la toma solo
-   de la variable de entorno ANTHROPIC_API_KEY: no la escribas en el código.
-2) Modelo: "claude-opus-5-5".
-3) System prompt (lo escribís VOS, es la parte más importante): define el rol,
-   el tono, el idioma de la respuesta, qué NO hacer (ej.: no inventar datos de
-   pedidos, plazos ni montos que no estén en el mail) y cómo firmar.
-4) En el mensaje de usuario, pasale a Claude el remitente, asunto y cuerpo.
-5) La respuesta (`response.content`) es una LISTA de bloques. Puede traer
-   bloques que no son texto (Claude piensa antes de responder). Quedate solo
-   con los de `type == "text"`.
-
-Después, en main.py:
-- El endpoint pasa a ser `async def` y llama a `await draft_reply(email)`
-  SOLO cuando el mail es nuevo (los duplicados no gastan plata).
-- La respuesta de un mail nuevo suma el campo "draft" con el borrador.
+Uses the async client, the system prompt and tools of the chosen profile
+(profiles.py) and a structured output, so the result always matches `Draft`.
+While Claude asks for tools, they run (tools.py) and the results go back to it.
 """
 
 import anthropic
 
-from models import Borrador, Email
-from perfiles import PERFILES, Perfil
-from tools import ejecutar_tool
+from models import Draft, Email
+from profiles import PROFILES, Profile
+from tools import run_tool
 
-# Inicializo la instancia
-cliente = anthropic.AsyncAnthropic()
-SCHEMA_BORRADOR = {
+# Created once per module; the API key comes from ANTHROPIC_API_KEY
+client = anthropic.AsyncAnthropic()
+
+DRAFT_SCHEMA = {
     "type": "object",
     "properties": {
-        "borrador": {"type": "string"},
-        "notas_internas": {"type": "string"},
-        "intencion": {
+        "draft": {"type": "string"},
+        "internal_notes": {"type": "string"},
+        "intent": {
             "type": "string",
             "enum": [
-                "estado_pedido",
-                "devolucion",
-                "reclamo",
-                "consulta_general",
-                "otro",
+                "order_status",
+                "return_request",
+                "complaint",
+                "general_inquiry",
+                "other",
             ],
         },
-        "urgencia": {"type": "string", "enum": ["alta", "media", "baja"]},
+        "urgency": {"type": "string", "enum": ["high", "medium", "low"]},
     },
-    "required": ["borrador", "notas_internas", "intencion", "urgencia"],
+    "required": ["draft", "internal_notes", "intent", "urgency"],
     "additionalProperties": False,
 }
 
 
-async def llamar_a_claude(messages, perfil: Perfil):
-    # La API no acepta tools=[]: si el perfil no tiene tools, no se manda el parámetro
-    extra = {"tools": perfil.tools} if perfil.tools else {}
-    return await cliente.messages.create(
+async def call_claude(messages, profile: Profile):
+    # The API doesn't accept tools=[]: if the profile has no tools, the parameter is left out
+    extra = {"tools": profile.tools} if profile.tools else {}
+    return await client.messages.create(
         max_tokens=16000,
         model="claude-opus-5-5",
-        system=perfil.prompt,
+        system=profile.prompt,
         messages=messages,
         output_config={
             "format": {
                 "type": "json_schema",
-                "schema": SCHEMA_BORRADOR,
+                "schema": DRAFT_SCHEMA,
             }
         },
         **extra,
     )
 
 
-async def draft_reply(email: Email, perfil: str = "tienda") -> Borrador:
-    perfil = PERFILES[perfil]
+async def draft_reply(email: Email, profile: str = "store") -> Draft:
+    profile = PROFILES[profile]
     messages = [
         {
             "role": "user",
             "content": (
                 f"<email>\n"
-                f"Remitente: {email.sender}\n"
-                f"Asunto: {email.subject}\n"
-                f"Cuerpo: {email.body}\n"
+                f"Sender: {email.sender}\n"
+                f"Subject: {email.subject}\n"
+                f"Body: {email.body}\n"
                 f"</email>"
             ),
         }
     ]
-    response = await llamar_a_claude(messages, perfil)
+    response = await call_claude(messages, profile)
 
     while response.stop_reason == "tool_use":
-        tools_results = []
+        tool_results = []
         for block in response.content:
             if block.type == "tool_use":
-                texto = ejecutar_tool(block.name, block.input, email)
-                tools_results += [
+                text = run_tool(block.name, block.input, email)
+                tool_results += [
                     {
                         "type": "tool_result",
                         "tool_use_id": block.id,
-                        "content": texto,
+                        "content": text,
                     }
                 ]
         messages += [
             {"role": "assistant", "content": response.content},
-            {"role": "user", "content": tools_results},
+            {"role": "user", "content": tool_results},
         ]
-        response = await llamar_a_claude(messages, perfil)
+        response = await call_claude(messages, profile)
 
-    # resultado = next(block for block in response.content if block.type == "text") esta es la forma cdo no tenemos un output estructurado
-    resultado = Borrador.model_validate_json(
+    return Draft.model_validate_json(
         next(block for block in response.content if block.type == "text").text
     )
-
-    return resultado

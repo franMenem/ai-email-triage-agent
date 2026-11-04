@@ -1,18 +1,17 @@
-from pydantic import BaseModel
 from typing import Literal
 
+from pydantic import BaseModel
 
-class Email(BaseModel):  # Email hereda de Basemodel
+
+class Email(BaseModel):
     message_id: str
     sender: str
-    subject: str  #| None = None si le agrego esto quiere decir que subject es opcional pero la consignda dice que es obligatorio
+    subject: str
     body: str
 
 
-class Borrador(BaseModel):
-    borrador: str  # el texto del mail, listo para mandar
-    notas_internas: str  # lo que Claude quiera avisarle al equipo.
-    intencion: Literal[
-        "estado_pedido", "devolucion", "reclamo", "consulta_general", "otro"
-    ]  # la intención del usuario
-    urgencia: Literal["alta", "media", "baja"]  # la urgencia de respuesta del mail
+class Draft(BaseModel):
+    draft: str  # the reply, ready to send
+    internal_notes: str  # what Claude wants the reviewer to know
+    intent: Literal["order_status", "return_request", "complaint", "general_inquiry", "other"]
+    urgency: Literal["high", "medium", "low"]

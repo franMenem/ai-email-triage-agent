@@ -1,129 +1,127 @@
 """
-Tools que Claude puede usar, y cómo se ejecutan.
+Tools Claude can use, and how they run.
 
-Cada tool tiene dos partes:
-- la DEFINICIÓN (TOOL_...): lo único que ve Claude, para decidir cuándo usarla;
-- la FUNCIÓN de Python que hace el trabajo contra la base (db.py).
+Each tool has two parts:
+- the DEFINITION (TOOL_...): the only thing Claude sees, to decide when to use it;
+- the Python FUNCTION that does the work against the database (db.py).
 
-Regla de seguridad: los permisos se deciden acá, en código. Por ejemplo, el
-remitente del mail lo pone el código, no Claude, así que nadie puede pedir
-datos de otra persona aunque engañe al modelo.
+Security rule: permissions are decided here, in code. For example, the email
+sender is set by the code, not by Claude, so nobody can get someone else's
+data even if they trick the model.
 
-Probalo con: uv run python tools.py   (no usa la API: es gratis)
+Run it with: uv run python tools.py   (doesn't call the API: it's free)
 """
 
 import json
 from contextlib import closing
 
-from db import conectar_db
+from db import connect_db
 
 
-def buscar_pedido(order_id, email):
-    """Devuelve el pedido (dict) solo si el número Y el email coinciden; si no, None."""
-    with closing(conectar_db()) as con:  # cierra la conexión al salir
-        # Los "?" son parámetros: SQLite trata el valor como dato, nunca como SQL.
-        # Nunca armar la consulta con f-strings: eso abre la puerta a inyección SQL.
-        fila = con.execute(
-            "SELECT * FROM pedidos WHERE order_id = ? AND email = ?",
+def find_order(order_id, email):
+    """Returns the order (dict) only if the number AND the email match; otherwise None."""
+    with closing(connect_db()) as con:  # closes the connection on exit
+        # The "?" are parameters: SQLite treats the value as data, never as SQL.
+        # Never build the query with f-strings: that opens the door to SQL injection.
+        row = con.execute(
+            "SELECT * FROM orders WHERE order_id = ? AND email = ?",
             (str(order_id), email),
         ).fetchone()
-    return dict(fila) if fila else None
+    return dict(row) if row else None
 
 
-def buscar_politica(tema):
-    """Devuelve el texto de una política de la tienda, o None si no existe."""
-    with closing(conectar_db()) as con:  # cierra la conexión al salir
-        fila = con.execute("SELECT texto FROM politicas WHERE tema = ?", (tema,)).fetchone()
-    return fila["texto"] if fila else None
+def find_policy(topic):
+    """Returns the text of a store policy, or None if it doesn't exist."""
+    with closing(connect_db()) as con:  # closes the connection on exit
+        row = con.execute("SELECT text FROM policies WHERE topic = ?", (topic,)).fetchone()
+    return row["text"] if row else None
 
 
-TOOL_BUSCAR_PEDIDO = {
-    "name": "buscar_pedido",
+TOOL_FIND_ORDER = {
+    "name": "find_order",
     "description": (
-        "Busca un pedido del remitente por su número y devuelve producto, estado "
-        "(entregado, en_camino, demorado o preparando) y fecha estimada de entrega. "
-        "Usala cuando el cliente pregunte por el estado, la entrega o una demora "
-        "de un pedido y mencione el número. Si el mail no trae el número, no lo "
-        "inventes: el borrador tiene que pedírselo."
+        "Looks up one of the sender's orders by number and returns the product, status "
+        "(delivered, in_transit, delayed or preparing) and estimated delivery date. "
+        "Use it when the customer asks about the status, delivery or delay of an order "
+        "and mentions the order number. If the email has no number, don't make one up: "
+        "the draft must ask for it."
     ),
     "input_schema": {
         "type": "object",
         "properties": {
-            "order_id": {"type": "string", "description": "Número de pedido, ej. 1002"}
+            "order_id": {"type": "string", "description": "Order number, e.g. 1002"}
         },
         "required": ["order_id"],
     },
 }
 
-TOOL_BUSCAR_POLITICA = {
-    "name": "buscar_politica",
+TOOL_FIND_POLICY = {
+    "name": "find_policy",
     "description": (
-        "Devuelve el texto oficial de una política de la tienda. Usala siempre que "
-        "el cliente pregunte por devoluciones, cambios, envíos, medios de pago o "
-        "garantía, en vez de responder de memoria."
+        "Returns the official text of a store policy. Always use it when the customer "
+        "asks about returns, exchanges, shipping, payment methods or warranty, instead "
+        "of answering from memory."
     ),
     "input_schema": {
         "type": "object",
         "properties": {
-            "tema": {
+            "topic": {
                 "type": "string",
-                "enum": ["devoluciones", "cambios", "envios", "medios_de_pago", "garantia"],
+                "enum": ["returns", "exchanges", "shipping", "payment_methods", "warranty"],
             }
         },
-        "required": ["tema"],
+        "required": ["topic"],
     },
 }
 
 
-def _ejecutar_buscar_pedido(entrada, email):
-    pedido = buscar_pedido(entrada["order_id"], email.sender)
-    if pedido is None:
-        return "No se encontró un pedido con ese número para este cliente."
-    return json.dumps(pedido, ensure_ascii=False)
+def _run_find_order(tool_input, email):
+    order = find_order(tool_input["order_id"], email.sender)
+    if order is None:
+        return "No order with that number was found for this customer."
+    return json.dumps(order, ensure_ascii=False)
 
 
-def _ejecutar_buscar_politica(entrada, email):
-    return buscar_politica(entrada["tema"]) or "No hay una política cargada sobre ese tema."
+def _run_find_policy(tool_input, email):
+    return find_policy(tool_input["topic"]) or "There is no policy on that topic."
 
 
-# Nombre de la tool -> función que la ejecuta. Recibe lo que pidió Claude
-# (`entrada`) y el mail original (`email`), y devuelve texto para Claude.
-EJECUTORES = {
-    "buscar_pedido": _ejecutar_buscar_pedido,
-    "buscar_politica": _ejecutar_buscar_politica,
+# Tool name -> function that runs it. Receives what Claude asked for
+# (`tool_input`) and the original email (`email`), and returns text for Claude.
+EXECUTORS = {
+    "find_order": _run_find_order,
+    "find_policy": _run_find_policy,
 }
 
 
-def ejecutar_tool(nombre, entrada, email):
-    if nombre not in EJECUTORES:
-        return f"La herramienta {nombre} no existe."
-    return EJECUTORES[nombre](entrada, email)
+def run_tool(name, tool_input, email):
+    if name not in EXECUTORS:
+        return f"The tool {name} does not exist."
+    return EXECUTORS[name](tool_input, email)
 
 
 if __name__ == "__main__":
     from models import Email
 
-    pedido = buscar_pedido("1002", "cliente@ejemplo.com")
-    assert pedido is not None
-    assert pedido["producto"] == "Zapatillas running"
-    assert pedido["estado"] == "en_camino"
-    assert buscar_pedido(1002, "cliente@ejemplo.com") == pedido, (
-        "Tiene que andar con int y con str"
+    order = find_order("1002", "customer@example.com")
+    assert order is not None
+    assert order["product"] == "Running sneakers"
+    assert order["status"] == "in_transit"
+    assert find_order(1002, "customer@example.com") == order, "Must work with int and str"
+    assert find_order("9999", "customer@example.com") is None
+    assert find_order("1003", "customer@example.com") is None, (
+        "Must not return someone else's order"
     )
-    assert buscar_pedido("9999", "cliente@ejemplo.com") is None
-    assert buscar_pedido("1003", "cliente@ejemplo.com") is None, (
-        "No puede devolver pedidos ajenos"
-    )
-    assert buscar_pedido("1002' OR '1'='1", "cliente@ejemplo.com") is None, (
-        "Un intento de inyección SQL no puede devolver datos"
+    assert find_order("1002' OR '1'='1", "customer@example.com") is None, (
+        "A SQL injection attempt must not return data"
     )
 
-    assert "30 días" in buscar_politica("devoluciones")
-    assert buscar_politica("inventada") is None
+    assert "30 days" in find_policy("returns")
+    assert find_policy("made_up") is None
 
-    mail = Email(message_id="t", sender="cliente@ejemplo.com", subject="", body="")
-    assert "Zapatillas" in ejecutar_tool("buscar_pedido", {"order_id": "1002"}, mail)
-    assert "No se encontró" in ejecutar_tool("buscar_pedido", {"order_id": "1003"}, mail)
-    assert "envío es gratis" in ejecutar_tool("buscar_politica", {"tema": "envios"}, mail)
-    assert "no existe" in ejecutar_tool("borrar_todo", {}, mail)
-    print("¡Tools con base de datos OK! 🎉")
+    mail = Email(message_id="t", sender="customer@example.com", subject="", body="")
+    assert "sneakers" in run_tool("find_order", {"order_id": "1002"}, mail)
+    assert "No order" in run_tool("find_order", {"order_id": "1003"}, mail)
+    assert "free on orders" in run_tool("find_policy", {"topic": "shipping"}, mail)
+    assert "does not exist" in run_tool("delete_everything", {}, mail)
+    print("Database tools OK")

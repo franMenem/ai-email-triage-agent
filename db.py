@@ -1,59 +1,60 @@
 """
-Base de datos del perfil "tienda" (SQLite, viene con Python).
+Database for the "store" profile (SQLite, included with Python).
 
-Es el ÚNICO archivo que sabe dónde están los datos. Para conectar la base real
-de una empresa (Postgres, Supabase, MySQL...) se cambia `conectar_db()` por el
-driver correspondiente; las tools siguen haciendo las mismas consultas.
+This is the ONLY file that knows where the data lives. To connect a company's
+real database (Postgres, Supabase, MySQL...), change `connect_db()` to use that
+driver; the tools keep running the same queries.
 
-La base de ejemplo se crea sola la primera vez desde data/pedidos.csv y la lista
-POLITICAS de abajo. Para regenerarla: borrá data/tienda.db y volvé a correr.
+The sample database is created automatically the first time, from
+data/orders.csv and the POLICIES list below. To rebuild it, delete
+data/store.db and run again.
 """
 
 import csv
 import sqlite3
 from pathlib import Path
 
-CARPETA_DATOS = Path(__file__).parent / "data"
-RUTA_DB = CARPETA_DATOS / "tienda.db"
+DATA_DIR = Path(__file__).parent / "data"
+DB_PATH = DATA_DIR / "store.db"
 
-# Datos de ejemplo: políticas de una tienda ficticia
-POLITICAS = [
-    ("devoluciones", "Se aceptan devoluciones hasta 30 días después de la entrega, con el producto sin uso y en su caja. El reintegro se hace al mismo medio de pago en hasta 10 días hábiles desde que recibimos el producto."),
-    ("cambios", "Los cambios de talle o color son gratis dentro de los 30 días de la entrega, sujetos a stock. El cliente envía el producto y despachamos el nuevo cuando lo recibimos."),
-    ("envios", "Despachamos en 1 a 2 días hábiles. La entrega demora 2 a 5 días hábiles en AMBA y 4 a 8 en el resto del país. El envío es gratis en compras desde $80.000."),
-    ("medios_de_pago", "Tarjetas de crédito y débito, transferencia bancaria y Mercado Pago. Con crédito hay hasta 3 cuotas sin interés."),
-    ("garantia", "Todos los productos tienen 3 meses de garantía por fallas de fabricación. No cubre el desgaste por uso ni los daños por mal uso."),
+# Sample data: policies of a fictional online store
+POLICIES = [
+    ("returns", "Returns are accepted up to 30 days after delivery, with the product unused and in its box. The refund goes back to the original payment method within 10 business days after we receive the product."),
+    ("exchanges", "Size or color exchanges are free within 30 days of delivery, subject to stock. The customer sends the product back and we ship the new one once we receive it."),
+    ("shipping", "Orders ship within 1 to 2 business days. Delivery takes 2 to 5 business days in the metro area and 4 to 8 elsewhere. Shipping is free on orders over $100."),
+    ("payment_methods", "Credit and debit cards, bank transfer and Mercado Pago. Credit cards allow up to 3 interest-free installments."),
+    ("warranty", "All products have a 3-month warranty against manufacturing defects. It does not cover normal wear or damage from misuse."),
 ]
 
 
-def crear_db(ruta=RUTA_DB):
-    """Crea las tablas y carga los datos de ejemplo."""
-    con = sqlite3.connect(ruta)
+def create_db(path=DB_PATH):
+    """Creates the tables and loads the sample data."""
+    con = sqlite3.connect(path)
     con.executescript("""
-        CREATE TABLE pedidos (
+        CREATE TABLE orders (
             order_id TEXT PRIMARY KEY,
             email TEXT NOT NULL,
-            producto TEXT NOT NULL,
-            estado TEXT NOT NULL,
-            fecha_estimada TEXT
+            product TEXT NOT NULL,
+            status TEXT NOT NULL,
+            estimated_delivery TEXT
         );
-        CREATE TABLE politicas (
-            tema TEXT PRIMARY KEY,
-            texto TEXT NOT NULL
+        CREATE TABLE policies (
+            topic TEXT PRIMARY KEY,
+            text TEXT NOT NULL
         );
     """)
-    with open(CARPETA_DATOS / "pedidos.csv", encoding="utf-8") as f:
-        filas = [tuple(fila.values()) for fila in csv.DictReader(f)]
-    con.executemany("INSERT INTO pedidos VALUES (?, ?, ?, ?, ?)", filas)
-    con.executemany("INSERT INTO politicas VALUES (?, ?)", POLITICAS)
+    with open(DATA_DIR / "orders.csv", encoding="utf-8") as f:
+        rows = [tuple(row.values()) for row in csv.DictReader(f)]
+    con.executemany("INSERT INTO orders VALUES (?, ?, ?, ?, ?)", rows)
+    con.executemany("INSERT INTO policies VALUES (?, ?)", POLICIES)
     con.commit()
     con.close()
 
 
-def conectar_db():
-    """Devuelve una conexión a la base; la crea con datos de ejemplo si no existe."""
-    if not RUTA_DB.exists():
-        crear_db()
-    con = sqlite3.connect(RUTA_DB)
-    con.row_factory = sqlite3.Row  # cada fila se puede leer como dict
+def connect_db():
+    """Returns a connection to the database; creates it with sample data if missing."""
+    if not DB_PATH.exists():
+        create_db()
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row  # each row can be read like a dict
     return con

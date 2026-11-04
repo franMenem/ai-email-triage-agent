@@ -17,7 +17,7 @@ wheels = [
 ]
 
 [[package]]
-name = "agente-mails"
+name = "ai-email-triage-agent"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

@@ -1,14 +1,14 @@
 """
-Cliente de Gmail: leer los mails de la etiqueta "agente" y dejar borradores.
+Gmail client: read the emails with the agent label and leave drafts.
 
-`conectar()` es el login estándar de Google (OAuth). La primera vez abre el
-navegador para que des permiso; después guarda token.json y no vuelve a
-preguntar. credentials.json y token.json están en el .gitignore.
+`connect()` is Google's standard login (OAuth). The first time it opens the
+browser to grant access; then it saves token.json and doesn't ask again.
+credentials.json and token.json are in .gitignore.
 
-Permisos (SCOPES): leer mails y crear borradores. Este archivo NUNCA tiene
-una función que envíe mails: una persona revisa cada borrador y lo manda.
+Permissions (SCOPES): read emails and create drafts. This file NEVER has a
+function that sends email: a person reviews every draft and sends it.
 
-Probalo con: uv run python gmail_client.py   (no usa la API de Claude)
+Run it with: uv run python gmail_client.py   (doesn't call the Claude API)
 """
 
 import base64
@@ -27,97 +27,106 @@ SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.compose",
 ]
-CARPETA = Path(__file__).parent
-RUTA_CREDENCIALES = CARPETA / "credentials.json"
-RUTA_TOKEN = CARPETA / "token.json"
+# Gmail label that a filter puts on the emails the agent should handle
+AGENT_LABEL = "agente"
+
+BASE_DIR = Path(__file__).parent
+CREDENTIALS_PATH = BASE_DIR / "credentials.json"
+TOKEN_PATH = BASE_DIR / "token.json"
 
 
-def conectar():
-    """Devuelve un cliente de la Gmail API autenticado con tu cuenta."""
+def connect():
+    """Returns a Gmail API client authenticated with your account."""
     creds = None
-    if RUTA_TOKEN.exists():
-        creds = Credentials.from_authorized_user_file(str(RUTA_TOKEN), SCOPES)
+    if TOKEN_PATH.exists():
+        creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), SCOPES)
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                str(RUTA_CREDENCIALES), SCOPES
-            )
+            flow = InstalledAppFlow.from_client_secrets_file(str(CREDENTIALS_PATH), SCOPES)
             creds = flow.run_local_server(port=0)
-        RUTA_TOKEN.write_text(creds.to_json())
+        TOKEN_PATH.write_text(creds.to_json())
     return build("gmail", "v1", credentials=creds)
 
 
-def listar_pendientes(servicio):
-    respuesta = servicio.users().messages().list(userId="me", q="label:agente is:unread").execute()
-    ids = [mensaje["id"] for mensaje in respuesta.get("messages", []) ]
+def list_pending(service):
+    """IDs of the unread emails with the agent label."""
+    response = (
+        service.users()
+        .messages()
+        .list(userId="me", q=f"label:{AGENT_LABEL} is:unread")
+        .execute()
+    )
+    return [message["id"] for message in response.get("messages", [])]
 
-    return ids
 
+def extract_text(payload):
+    """Returns the plain-text body of a Gmail message.
 
-def extraer_texto(payload):
-    """Devuelve el cuerpo en texto plano de un mensaje de Gmail.
-
-    Gmail manda el cuerpo en base64 (variante URL) y, si el mail tiene HTML
-    o adjuntos, partido en "parts" anidadas. Busca la primera parte text/plain.
+    Gmail sends the body in base64 (URL variant) and, if the email has HTML
+    or attachments, split into nested "parts". Finds the first text/plain part.
     """
     if payload.get("mimeType") == "text/plain" and payload.get("body", {}).get("data"):
         return base64.urlsafe_b64decode(payload["body"]["data"]).decode("utf-8", "replace")
-    for parte in payload.get("parts", []):
-        texto = extraer_texto(parte)
-        if texto:
-            return texto
+    for part in payload.get("parts", []):
+        text = extract_text(part)
+        if text:
+            return text
     return ""
 
 
-def encabezados(mensaje):
-    """Pasa la lista de headers [{"name": ..., "value": ...}] a un dict."""
-    return {h["name"].lower(): h["value"] for h in mensaje["payload"]["headers"]}
+def get_headers(message):
+    """Turns the header list [{"name": ..., "value": ...}] into a dict."""
+    return {h["name"].lower(): h["value"] for h in message["payload"]["headers"]}
 
 
-def leer_mail(servicio, mensaje_id):
-    """Trae un mensaje de Gmail y lo convierte en el `Email` que usa el agente."""
-    mensaje = servicio.users().messages().get(userId="me", id=mensaje_id, format="full").execute()
-    h = encabezados(mensaje)
-    _, direccion = parseaddr(h.get("from", ""))  # "Mark <k@x.com>" -> "k@x.com"
+def read_email(service, message_id):
+    """Fetches a Gmail message and turns it into the `Email` the agent uses."""
+    message = service.users().messages().get(userId="me", id=message_id, format="full").execute()
+    h = get_headers(message)
+    _, address = parseaddr(h.get("from", ""))  # "Mark <k@x.com>" -> "k@x.com"
     return Email(
-        message_id=mensaje_id,
-        sender=direccion,
+        message_id=message_id,
+        sender=address,
         subject=h.get("subject", ""),
-        body=extraer_texto(mensaje["payload"]),
+        body=extract_text(message["payload"]),
     )
 
 
-def crear_borrador(servicio, mensaje_id, texto):
-    """Deja `texto` como borrador de respuesta, dentro del hilo del mail original."""
-    original = servicio.users().messages().get(userId="me", id=mensaje_id, format="metadata").execute()
-    h = encabezados(original)
-    asunto = h.get("subject", "")
+def create_draft(service, message_id, text):
+    """Saves `text` as a draft reply, inside the original email's thread."""
+    original = (
+        service.users().messages().get(userId="me", id=message_id, format="metadata").execute()
+    )
+    h = get_headers(original)
+    subject = h.get("subject", "")
 
-    respuesta = EmailMessage()
-    respuesta["To"] = h.get("reply-to") or h.get("from", "")
-    respuesta["Subject"] = asunto if asunto.lower().startswith("re:") else f"Re: {asunto}"
-    # Estos dos headers hacen que Gmail (y el cliente) lo muestren como respuesta en el hilo
+    reply = EmailMessage()
+    reply["To"] = h.get("reply-to") or h.get("from", "")
+    reply["Subject"] = subject if subject.lower().startswith("re:") else f"Re: {subject}"
+    # These two headers make Gmail (and other clients) show it as a reply in the thread
     if "message-id" in h:
-        respuesta["In-Reply-To"] = h["message-id"]
-        respuesta["References"] = h["message-id"]
-    respuesta.set_content(texto)
+        reply["In-Reply-To"] = h["message-id"]
+        reply["References"] = h["message-id"]
+    reply.set_content(text)
 
-    raw = base64.urlsafe_b64encode(respuesta.as_bytes()).decode()
-    return servicio.users().drafts().create(
-        userId="me",
-        body={"message": {"raw": raw, "threadId": original["threadId"]}},
-    ).execute()
+    raw = base64.urlsafe_b64encode(reply.as_bytes()).decode()
+    return (
+        service.users()
+        .drafts()
+        .create(userId="me", body={"message": {"raw": raw, "threadId": original["threadId"]}})
+        .execute()
+    )
 
 
 if __name__ == "__main__":
-    servicio = conectar()
-    perfil = servicio.users().getProfile(userId="me").execute()
-    print("Conectado como:", perfil["emailAddress"])
+    service = connect()
+    profile = service.users().getProfile(userId="me").execute()
+    print("Connected as:", profile["emailAddress"])
 
-    ids = listar_pendientes(servicio)
-    print("Mails pendientes con la etiqueta 'agente':", ids)
-    for mensaje_id in ids:
-        mail = leer_mail(servicio, mensaje_id)
-        print(f"- De: {mail.sender} | Asunto: {mail.subject} | {mail.body[:80]!r}")
+    ids = list_pending(service)
+    print(f"Pending emails with the '{AGENT_LABEL}' label:", ids)
+    for message_id in ids:
+        mail = read_email(service, message_id)
+        print(f"- From: {mail.sender} | Subject: {mail.subject} | {mail.body[:80]!r}")
