@@ -8,6 +8,9 @@ Correlo con: uv run --env-file .env python procesar.py
 
 El perfil (prompt + tools) se elige con --perfil; por defecto "freelance":
     uv run --env-file .env python procesar.py --perfil tienda
+
+Para que quede corriendo solo y revise la bandeja cada N minutos (Ctrl+C lo corta):
+    uv run --env-file .env python procesar.py --cada 5
 """
 
 import argparse
@@ -60,7 +63,25 @@ async def main(perfil):
         print("  ✅ Borrador creado en Gmail")
 
 
+async def vigilar(perfil, minutos):
+    """Corre main() para siempre, con una pausa de `minutos` entre vuelta y vuelta."""
+    while True:
+        try:
+            await main(perfil)
+        except Exception as e:
+            # Acá sí se atrapa cualquier error (ej. se cortó internet y falla Gmail):
+            # el proceso tiene que seguir vivo y reintentar en la próxima vuelta.
+            print(f"Error en esta vuelta, se reintenta en {minutos} min: {e!r}")
+        print(f"\nPróxima revisión en {minutos} min (Ctrl+C para cortar)")
+        await asyncio.sleep(minutos * 60)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--perfil", choices=PERFILES, default="freelance")
-    asyncio.run(main(parser.parse_args().perfil))
+    parser.add_argument("--cada", type=int, help="minutos entre revisiones; sin esto corre una sola vez")
+    args = parser.parse_args()
+    if args.cada:
+        asyncio.run(vigilar(args.perfil, args.cada))
+    else:
+        asyncio.run(main(args.perfil))
