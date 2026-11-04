@@ -127,6 +127,25 @@ def has_newer_draft(thread_messages, message_id):
     )
 
 
+def email_to_answer(thread_messages):
+    """ID of the email in this thread that still needs a reply, or None.
+
+    That's the latest message of the conversation (drafts don't count) when:
+    - it wasn't sent by you (no "SENT" label): otherwise you already answered;
+    - and there's no draft written after it: otherwise it's already drafted.
+    Whether you opened it doesn't matter: reading an email isn't answering it.
+    """
+    conversation = [m for m in thread_messages if "DRAFT" not in m.get("labelIds", [])]
+    if not conversation:
+        return None
+    last = max(conversation, key=lambda m: int(m["internalDate"]))
+    if "SENT" in last.get("labelIds", []):
+        return None
+    if has_newer_draft(thread_messages, last["id"]):
+        return None
+    return last["id"]
+
+
 def build_reply(original_headers, text):
     """The reply as a raw (base64url) email, ready for the Gmail drafts API."""
     h = original_headers

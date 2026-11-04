@@ -2,7 +2,14 @@
 
 import base64
 
-from gmail_parsing import extract_text, format_thread, has_newer_draft, html_to_text, strip_quoted
+from gmail_parsing import (
+    email_to_answer,
+    extract_text,
+    format_thread,
+    has_newer_draft,
+    html_to_text,
+    strip_quoted,
+)
 
 
 def b64(text):
@@ -95,3 +102,30 @@ def test_an_older_draft_does_not_hide_a_new_email():
 
 def test_no_draft_means_pending():
     assert not has_newer_draft([{"id": "1", "internalDate": "1000", "labelIds": ["INBOX"]}], "1")
+
+
+def msg(msg_id, date, *labels):
+    return {"id": msg_id, "internalDate": str(date), "labelIds": list(labels)}
+
+
+def test_a_read_email_still_needs_a_reply():
+    # Opening an email isn't answering it
+    assert email_to_answer([msg("1", 1000, "INBOX")]) == "1"
+
+
+def test_the_latest_client_email_is_the_one_to_answer():
+    thread = [msg("1", 1000, "INBOX"), msg("2", 2000, "SENT"), msg("3", 3000, "INBOX", "UNREAD")]
+    assert email_to_answer(thread) == "3"
+
+
+def test_nothing_to_answer_after_you_replied():
+    assert email_to_answer([msg("1", 1000, "INBOX"), msg("2", 2000, "SENT")]) is None
+
+
+def test_nothing_to_answer_when_the_draft_is_already_there():
+    assert email_to_answer([msg("1", 1000, "INBOX"), msg("d", 2000, "DRAFT")]) is None
+
+
+def test_a_new_email_after_an_unsent_draft_needs_its_own_reply():
+    thread = [msg("1", 1000, "INBOX"), msg("d", 2000, "DRAFT"), msg("2", 3000, "INBOX")]
+    assert email_to_answer(thread) == "2"

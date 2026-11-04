@@ -33,7 +33,7 @@ from gmail_parsing import (
     extract_text,
     format_thread,
     get_headers,
-    has_newer_draft,
+    email_to_answer,
     strip_quoted,
 )
 from models import Email
@@ -46,6 +46,8 @@ SCOPES = [
 AGENT_LABEL = "agente"
 # Pub/Sub topic where Gmail publishes a notification when a labeled email arrives
 PUBSUB_TOPIC = "projects/ai-email-triage-agent-513617/topics/gmail-agent"
+# Only conversations with activity in the last N days: old threads are never answered
+PENDING_MAX_DAYS = 7
 
 BASE_DIR = Path(__file__).parent
 CREDENTIALS_PATH = BASE_DIR / "credentials.json"
@@ -89,19 +91,21 @@ class GmailInbox:
         return cls(connect())
 
     def list_pending(self):
-        """IDs of the unread emails with the agent label that don't have a draft yet.
+        """IDs of the emails with the agent label that still need a reply.
 
-        This is what makes the agent idempotent without keeping any state: an email
-        is skipped once its thread has a draft newer than it. Delete the draft and
-        the next run writes a new one. If the Claude call fails, no draft is
-        created, so it's retried.
+        For each recent labeled thread, the latest message counts if it's from the
+        client (not from you) and has no draft written after it (see email_to_answer).
+        Read or unread doesn't matter. This is also what makes the agent idempotent
+        without keeping any state: once the draft exists, or once you reply, the
+        thread is skipped. Delete the draft and the next run writes a new one.
         """
-        response = self._messages.list(userId="me", q=f"label:{AGENT_LABEL} is:unread").execute()
+        query = f"label:{AGENT_LABEL} newer_than:{PENDING_MAX_DAYS}d"
+        threads = self._threads.list(userId="me", q=query).execute().get("threads", [])
         pending = []
-        for m in response.get("messages", []):
-            thread = self._threads.get(userId="me", id=m["threadId"], format="minimal").execute()
-            if not has_newer_draft(thread["messages"], m["id"]):
-                pending.append(m["id"])
+        for t in threads:
+            thread = self._threads.get(userId="me", id=t["id"], format="minimal").execute()
+            if message_id := email_to_answer(thread["messages"]):
+                pending.append(message_id)
         return pending
 
     def read_email(self, message_id):
@@ -156,7 +160,7 @@ if __name__ == "__main__":
         sys.exit()
 
     ids = inbox.list_pending()
-    print(f"Pending emails with the '{AGENT_LABEL}' label and no draft yet:", ids)
+    print(f"Emails with the '{AGENT_LABEL}' label that still need a reply:", ids)
     for message_id in ids:
         mail = inbox.read_email(message_id)
         print(f"- From: {mail.sender} | Subject: {mail.subject} | {mail.body[:80]!r}")

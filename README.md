@@ -18,11 +18,11 @@ Gmail filter ──> label "agente" ──> process_inbox.py ──> Claude ─�
 ```
 
 1. A Gmail filter puts the label `agente` on emails from chosen senders, so the agent only sees those emails and not the whole inbox.
-2. `process_inbox.py` reads the unread emails with that label that don't have a draft yet. Claude gets the earlier messages of the thread too (without the quoted text and without drafts), so it can follow a conversation like *"Tuesday works for me!"*. HTML-only emails are converted to text.
+2. `process_inbox.py` finds the labeled emails that still need a reply: the latest message of a recent thread is from the client (not from you) and has no draft after it. Read or unread doesn't matter: opening an email isn't answering it. Claude gets the earlier messages of the thread too (without the quoted text and without drafts), so it can follow a conversation like *"Tuesday works for me!"*. HTML-only emails are converted to text.
 3. Claude writes the reply with a structured output: the draft, the intent (`order_status`, `return_request`, `complaint`, `general_inquiry`, `other`), the urgency (`high`, `medium`, `low`) and internal notes.
 4. The reply is saved as a draft inside the original thread, ready to edit and send.
 
-There is no state file: an email is skipped once its thread has a draft written after it, so the same email never gets two drafts, but a client who writes again before you answer still gets a new one. Delete a draft and the next run writes a new one; if the Claude call fails, no draft is created and the email is retried. This also means it can run on a server without local storage.
+There is no state file: an email is skipped once its thread has a draft written after it or once you reply, so the same email never gets two drafts, but a client who writes again before you answer still gets a new one. Delete a draft and the next run writes a new one (to make the agent ignore a thread, remove its `agente` label); if the Claude call fails, no draft is created and the email is retried. This also means it can run on a server without local storage.
 
 ## Code structure
 
@@ -179,7 +179,7 @@ uv run pytest
 | `tests/test_errors.py` | Claude API errors: 503 when retryable, 500 when not, failed emails can be retried |
 | `tests/test_classification.py` | Intent/urgency: the model and the JSON schema accept the same values |
 | `tests/test_tools.py` | Database tools: someone else's order, SQL injection, unknown tool |
-| `tests/test_gmail_parsing.py` | HTML-only emails, quoted replies, thread context, newer-draft rule |
+| `tests/test_gmail_parsing.py` | HTML-only emails, quoted replies, thread context, which email still needs a reply |
 | `tests/test_process_inbox.py` | The processing flow with a fake inbox: every email gets its draft, a Claude error only skips that email |
 | `tests/test_prompts.py` | Prompts keep the `<email>` block, `ALERT:` and the tool names |
 | `tests/test_webhook.py` | Webhook and watch renewal: a wrong token never reaches Gmail, 204 + background processing, token hidden in logs |

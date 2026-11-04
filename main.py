@@ -134,7 +134,7 @@ async def process_in_background(inbox_factory):
             await process_new_emails(profile, inbox)
         except Exception as e:
             # Pub/Sub already got its 2xx, so it won't retry: the email stays pending
-            # (unread, labeled, no draft) and the next notification picks it up.
+            # (labeled, not answered, no draft) and the next notification picks it up.
             print(f"Error processing the inbox: {e!r}")
 
 
@@ -143,7 +143,7 @@ async def gmail_webhook(
     push: PubSubPush, background_tasks: BackgroundTasks, inbox_factory=Depends(get_inbox_factory)
 ):
     # The notification doesn't include the email, only "something changed".
-    # It's logged, and the inbox is checked the usual way: labeled, unread, no draft.
+    # It's logged, and the inbox is checked the usual way: labeled, not answered, no draft.
     try:
         notification = json.loads(base64.b64decode(push.message.data))
         print(f"Gmail notification: historyId={notification.get('historyId')}")
