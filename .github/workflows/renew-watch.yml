@@ -1,0 +1,19 @@
+name: renew-gmail-watch
+
+# The Gmail watch expires after 7 days: renew it every day so it never lapses.
+on:
+  schedule:
+    - cron: "0 9 * * *"  # every day at 09:00 UTC (06:00 in Buenos Aires)
+  workflow_dispatch:  # also runnable by hand from the Actions tab
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call /renew-watch
+        env:
+          WEBHOOK_TOKEN: ${{ secrets.WEBHOOK_TOKEN }}
+        # --fail makes the job fail (and GitHub email you) if the server doesn't answer 2xx
+        run: >
+          curl --fail --silent --show-error -X POST
+          "https://ai-email-triage-agent.fastapicloud.dev/renew-watch?token=${WEBHOOK_TOKEN}"

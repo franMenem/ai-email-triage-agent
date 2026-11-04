@@ -73,3 +73,16 @@ def test_renew_watch(monkeypatch):
     response = client.post(f"/renew-watch?token={TOKEN}")
     assert response.status_code == 200
     assert response.json()["status"] == "watch renewed"
+
+
+def test_access_logs_hide_the_token():
+    import logging
+
+    record = logging.LogRecord(
+        "uvicorn.access", logging.INFO, "", 0, '%s - "%s %s HTTP/%s" %d',
+        ("1.2.3.4:0", "POST", "/gmail-webhook?token=secret123&x=1", "1.1", 204), None,
+    )
+    main.HideTokenInAccessLogs().filter(record)
+    line = record.getMessage()
+    assert "secret123" not in line
+    assert "/gmail-webhook?token=***&x=1" in line

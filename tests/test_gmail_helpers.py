@@ -2,7 +2,7 @@
 
 import base64
 
-from gmail_client import extract_text, format_thread, html_to_text, strip_quoted
+from gmail_client import extract_text, format_thread, has_newer_draft, html_to_text, strip_quoted
 
 
 def b64(text):
@@ -73,3 +73,25 @@ def test_format_thread_ignores_drafts():
     draft["labelIds"] = ["DRAFT"]
     messages = [message("1", "Mark <k@x.com>", "Can we meet?"), draft, message("3", "Mark <k@x.com>", "Hello?")]
     assert "Unsent draft text" not in format_thread(messages, current_id="3")
+
+
+def test_a_draft_written_after_the_email_answers_it():
+    thread = [
+        {"id": "1", "internalDate": "1000", "labelIds": ["INBOX"]},
+        {"id": "d", "internalDate": "2000", "labelIds": ["DRAFT"]},
+    ]
+    assert has_newer_draft(thread, "1")
+
+
+def test_an_older_draft_does_not_hide_a_new_email():
+    # The client wrote again before the first draft was sent
+    thread = [
+        {"id": "1", "internalDate": "1000", "labelIds": ["INBOX"]},
+        {"id": "d", "internalDate": "2000", "labelIds": ["DRAFT"]},
+        {"id": "2", "internalDate": "3000", "labelIds": ["INBOX", "UNREAD"]},
+    ]
+    assert not has_newer_draft(thread, "2")
+
+
+def test_no_draft_means_pending():
+    assert not has_newer_draft([{"id": "1", "internalDate": "1000", "labelIds": ["INBOX"]}], "1")

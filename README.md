@@ -14,15 +14,15 @@ Gmail filter ──> label "agente" ──> process_inbox.py ──> Claude ─�
                                        │               ├─ intent + urgency
                                        │               └─ internal notes for the reviewer
                                        ├─ reads the whole thread, not just the last email
-                                       └─ skips threads that already have a draft (no duplicates)
+                                       └─ skips emails that already have a newer draft (no duplicates)
 ```
 
 1. A Gmail filter puts the label `agente` on emails from chosen senders, so the agent only sees those emails and not the whole inbox.
-2. `process_inbox.py` reads the unread emails with that label whose thread doesn't have a draft yet. Claude gets the earlier messages of the thread too (without the quoted text and without drafts), so it can follow a conversation like *"Tuesday works for me!"*. HTML-only emails are converted to text.
+2. `process_inbox.py` reads the unread emails with that label that don't have a draft yet. Claude gets the earlier messages of the thread too (without the quoted text and without drafts), so it can follow a conversation like *"Tuesday works for me!"*. HTML-only emails are converted to text.
 3. Claude writes the reply with a structured output: the draft, the intent (`order_status`, `return_request`, `complaint`, `general_inquiry`, `other`), the urgency (`high`, `medium`, `low`) and internal notes.
 4. The reply is saved as a draft inside the original thread, ready to edit and send.
 
-There is no state file: a thread with a draft is skipped, so the same email never gets two drafts. Delete a draft and the next run writes a new one; if the Claude call fails, no draft is created and the email is retried. This also means it can run on a server without local storage.
+There is no state file: an email is skipped once its thread has a draft written after it, so the same email never gets two drafts, but a client who writes again before you answer still gets a new one. Delete a draft and the next run writes a new one; if the Claude call fails, no draft is created and the email is retried. This also means it can run on a server without local storage.
 
 ## Profiles
 
@@ -136,6 +136,8 @@ uv run --env-file .env fastapi dev main.py   # http://127.0.0.1:8000/docs
 
 ## Real time with a webhook
 
+Running on [FastAPI Cloud](https://fastapicloud.com): a labeled email gets its draft in about 10 seconds, with no computer of mine involved.
+
 Instead of checking every few minutes, Gmail can push a notification as soon as a labeled email arrives:
 
 ```
@@ -143,9 +145,9 @@ email gets the "agente" label ──> Gmail watch ──> Pub/Sub topic ──> 
                                                                     (answers 204 at once, works in the background)
 ```
 
-- `uv run python gmail_client.py --watch` starts the Gmail watch (`start_watch`). It lasts 7 days; `POST /renew-watch` renews it and should be called once a day.
-- `POST /gmail-webhook` answers Pub/Sub right away and runs the same processing as `process_inbox.py` in the background. A lock keeps two notifications from processing at the same time, and duplicated notifications are harmless because threads with a draft are skipped.
-- Both endpoints are public URLs, so they require `?token=<WEBHOOK_TOKEN>` and refuse everything if it isn't configured. (A stricter option is Pub/Sub's OIDC authentication, verifying Google's signed token.)
+- `uv run python gmail_client.py --watch` starts the Gmail watch (`start_watch`). It lasts 7 days, so a GitHub Actions cron (`.github/workflows/renew-watch.yml`) calls `POST /renew-watch` every day.
+- `POST /gmail-webhook` answers Pub/Sub right away and runs the same processing as `process_inbox.py` in the background. A lock keeps two notifications from processing at the same time, and duplicated notifications are harmless because emails that already have a draft are skipped.
+- Both endpoints are public URLs, so they require `?token=<WEBHOOK_TOKEN>` and refuse everything if it isn't configured. The token is replaced with `***` in the access logs. (A stricter option is Pub/Sub's OIDC authentication, verifying Google's signed token.)
 - On a server, the Gmail login comes from the `GMAIL_TOKEN_JSON` environment variable instead of `token.json`.
 
 ## Tests
@@ -204,6 +206,6 @@ Python 3.12 · Anthropic SDK (Claude, tool calling, structured outputs) · Gmail
 - [x] Evals across models; Haiku chosen as default
 - [x] pytest + GitHub Actions
 - [x] Gmail push notifications (`watch` + Pub/Sub) to a webhook
-- [ ] Deploy on FastAPI Cloud, with a daily watch renewal
+- [x] Deployed on FastAPI Cloud, with a daily watch renewal
 - [ ] LLM judge for draft quality, and tracing
 - [ ] Documents/FAQ search (RAG) for questions that aren't in a table

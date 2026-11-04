@@ -22,7 +22,9 @@ and open http://127.0.0.1:8000/docs
 import asyncio
 import base64
 import json
+import logging
 import os
+import re
 import secrets
 from datetime import datetime
 
@@ -36,6 +38,22 @@ from models import Email
 from process_inbox import process_new_emails
 
 app = FastAPI()
+
+
+class HideTokenInAccessLogs(logging.Filter):
+    """The token travels in the URL (?token=...), so uvicorn would print it in every
+    access log line. This replaces it with *** before the line is written."""
+
+    def filter(self, record):
+        # uvicorn access records: args = (client, method, path, http_version, status)
+        if isinstance(record.args, tuple) and len(record.args) >= 3:
+            args = list(record.args)
+            args[2] = re.sub(r"token=[^&\s]*", "token=***", str(args[2]))
+            record.args = tuple(args)
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(HideTokenInAccessLogs())
 # A set, because the only question is "have I seen this ID?"
 seen_ids = set()
 

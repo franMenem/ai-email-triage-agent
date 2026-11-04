@@ -71,18 +71,27 @@ def connect():
     return build("gmail", "v1", credentials=creds)
 
 
-def threads_with_drafts(service):
-    """IDs of the threads that already have a draft (made by the agent or by you)."""
-    response = service.users().drafts().list(userId="me", maxResults=500).execute()
-    return {d["message"]["threadId"] for d in response.get("drafts", [])}
+def has_newer_draft(thread_messages, message_id):
+    """True if the thread already has a draft written after `message_id` arrived.
+
+    That draft answers this email (or a later one), so there's nothing to do.
+    An older draft doesn't count: if the client writes again before you send
+    it, the new email still gets its own draft.
+    """
+    received = next(int(m["internalDate"]) for m in thread_messages if m["id"] == message_id)
+    return any(
+        "DRAFT" in m.get("labelIds", []) and int(m["internalDate"]) > received
+        for m in thread_messages
+    )
 
 
 def list_pending(service):
-    """IDs of the unread emails with the agent label whose thread has no draft yet.
+    """IDs of the unread emails with the agent label that don't have a draft yet.
 
-    This is what makes the agent idempotent without keeping any state: once a
-    thread has a draft, it's skipped. Delete the draft and the next run writes
-    a new one. If the Claude call fails, no draft is created, so it's retried.
+    This is what makes the agent idempotent without keeping any state: an email
+    is skipped once its thread has a draft newer than it. Delete the draft and the
+    next run writes a new one. If the Claude call fails, no draft is created, so
+    it's retried.
     """
     response = (
         service.users()
@@ -90,8 +99,14 @@ def list_pending(service):
         .list(userId="me", q=f"label:{AGENT_LABEL} is:unread")
         .execute()
     )
-    with_drafts = threads_with_drafts(service)
-    return [m["id"] for m in response.get("messages", []) if m["threadId"] not in with_drafts]
+    pending = []
+    for m in response.get("messages", []):
+        thread = (
+            service.users().threads().get(userId="me", id=m["threadId"], format="minimal").execute()
+        )
+        if not has_newer_draft(thread["messages"], m["id"]):
+            pending.append(m["id"])
+    return pending
 
 
 class _TextFromHTML(HTMLParser):
