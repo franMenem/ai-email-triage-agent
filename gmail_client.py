@@ -28,26 +28,21 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
-from gmail_parsing import (
-    build_reply,
-    extract_text,
-    format_thread,
-    get_headers,
-    email_to_answer,
-    strip_quoted,
-)
+from gmail_parsing import build_reply, email_to_answer, extract_text, format_thread, get_headers
+from mail_core import ALL_MAIL, PENDING_MAX_DAYS, looks_automated, strip_quoted
 from models import Email
 
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.compose",
 ]
-# Gmail label that a filter puts on the emails the agent should handle
-AGENT_LABEL = "agente"
+# Gmail label that a filter puts on the emails the agent should handle, or "*" for
+# every incoming email of the Primary tab (newsletters and notifications skipped)
+AGENT_LABEL = os.environ.get("AGENT_FILTER", "agente")
 # Pub/Sub topic where Gmail publishes a notification when a labeled email arrives
-PUBSUB_TOPIC = "projects/ai-email-triage-agent-513617/topics/gmail-agent"
-# Only conversations with activity in the last N days: old threads are never answered
-PENDING_MAX_DAYS = 7
+PUBSUB_TOPIC = os.environ.get(
+    "GMAIL_PUBSUB_TOPIC", "projects/ai-email-triage-agent-513617/topics/gmail-agent"
+)
 
 BASE_DIR = Path(__file__).parent
 CREDENTIALS_PATH = BASE_DIR / "credentials.json"
@@ -91,21 +86,33 @@ class GmailInbox:
         return cls(connect())
 
     def list_pending(self):
-        """IDs of the emails with the agent label that still need a reply.
+        """IDs of the emails the agent handles that still need a reply.
 
-        For each recent labeled thread, the latest message counts if it's from the
-        client (not from you) and has no draft written after it (see email_to_answer).
+        For each recent thread, the latest message counts if it's from the client
+        (not from you) and has no draft written after it (see mail_core.email_to_answer).
         Read or unread doesn't matter. This is also what makes the agent idempotent
         without keeping any state: once the draft exists, or once you reply, the
         thread is skipped. Delete the draft and the next run writes a new one.
         """
-        query = f"label:{AGENT_LABEL} newer_than:{PENDING_MAX_DAYS}d"
+        if AGENT_LABEL == ALL_MAIL:
+            query = f"in:inbox category:primary newer_than:{PENDING_MAX_DAYS}d"
+        else:
+            query = f"label:{AGENT_LABEL} newer_than:{PENDING_MAX_DAYS}d"
         threads = self._threads.list(userId="me", q=query).execute().get("threads", [])
         pending = []
         for t in threads:
-            thread = self._threads.get(userId="me", id=t["id"], format="minimal").execute()
-            if message_id := email_to_answer(thread["messages"]):
-                pending.append(message_id)
+            thread = self._threads.get(
+                userId="me", id=t["id"], format="metadata",
+                metadataHeaders=["From", "List-Unsubscribe", "Precedence", "Auto-Submitted"],
+            ).execute()
+            message_id = email_to_answer(thread["messages"])
+            if not message_id:
+                continue
+            if AGENT_LABEL == ALL_MAIL:
+                last = next(m for m in thread["messages"] if m["id"] == message_id)
+                if looks_automated(get_headers(last)):
+                    continue
+            pending.append(message_id)
         return pending
 
     def read_email(self, message_id):
@@ -140,23 +147,19 @@ class GmailInbox:
     def start_watch(self):
         """Asks Gmail to publish to PUBSUB_TOPIC whenever an email gets the agent label.
 
-        A watch lasts 7 days: it must be renewed before `expiration` (calling this
-        again renews it). Returns {"historyId": ..., "expiration": <ms since 1970>}.
+        A watch lasts 7 days: it must be renewed before it expires (calling this
+        again renews it). Returns the expiry.
         """
-        body = {
-            "topicName": PUBSUB_TOPIC,
-            "labelIds": [self.label_id(AGENT_LABEL)],
-            "labelFilterBehavior": "include",
-        }
-        return self._service.users().watch(userId="me", body=body).execute()
+        label = "INBOX" if AGENT_LABEL == ALL_MAIL else self.label_id(AGENT_LABEL)
+        body = {"topicName": PUBSUB_TOPIC, "labelIds": [label], "labelFilterBehavior": "include"}
+        response = self._service.users().watch(userId="me", body=body).execute()
+        return datetime.fromtimestamp(int(response["expiration"]) / 1000)
 
 
 if __name__ == "__main__":
     inbox = GmailInbox.connect()
     if "--watch" in sys.argv:
-        response = inbox.start_watch()
-        expires = datetime.fromtimestamp(int(response["expiration"]) / 1000)
-        print(f"Watch active. historyId={response['historyId']} | expires {expires:%Y-%m-%d %H:%M}")
+        print(f"Watch active until {inbox.start_watch():%Y-%m-%d %H:%M}")
         sys.exit()
 
     ids = inbox.list_pending()

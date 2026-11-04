@@ -8,6 +8,7 @@ dependencies = [
     "google-api-python-client>=2.201.0",
     "google-auth-oauthlib>=1.5.0",
     "httpx2>=2.13.1",
+    "msal>=1.39.0",
 ]
 
 [tool.fastapi]

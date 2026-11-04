@@ -1,49 +1,21 @@
 """
-Pure functions that turn Gmail API data into what the agent needs.
+Pure functions that turn Gmail API data into the shapes mail_core.py works with.
 
 No network and no login here: they take the dicts the Gmail API returns and give
-back text. That's why they're easy to test (tests/test_gmail_parsing.py) and
-gmail_client.py only has to deal with the API calls.
+back text or ThreadMessage records. The provider-independent rules (which email
+needs a reply, HTML to text, quotes, reply building) live in mail_core.py.
 """
 
 import base64
-import re
-from email.message import EmailMessage
-from html.parser import HTMLParser
 
-# How much of the thread Claude sees: the last N earlier messages, each cut to M characters
-THREAD_MAX_MESSAGES = 10
-THREAD_MAX_CHARS = 2000
-
-
-class _TextFromHTML(HTMLParser):
-    """Keeps the visible text of an HTML email (skips <script> and <style>)."""
-
-    def __init__(self):
-        super().__init__()
-        self.parts = []
-        self._skip = False
-
-    def handle_starttag(self, tag, attrs):
-        if tag in ("script", "style"):
-            self._skip = True
-        elif tag in ("br", "p", "div", "li", "tr"):
-            self.parts.append("\n")
-
-    def handle_endtag(self, tag):
-        if tag in ("script", "style"):
-            self._skip = False
-
-    def handle_data(self, data):
-        if not self._skip:
-            self.parts.append(data)
-
-
-def html_to_text(html):
-    parser = _TextFromHTML()
-    parser.feed(html)
-    text = "".join(parser.parts)
-    return re.sub(r"\n\s*\n+", "\n\n", text).strip()
+from mail_core import (
+    ThreadMessage,
+    build_reply_message,
+    format_thread as format_thread_text,
+    html_to_text,
+)
+from mail_core import email_to_answer as _email_to_answer
+from mail_core import has_newer_draft as _has_newer_draft
 
 
 def _decode(part):
@@ -74,28 +46,31 @@ def extract_text(payload):
     return html_to_text(_decode(html)) if html else ""
 
 
-# "On Mon, 3 Nov 2026, Mark <k@x.com> wrote:" / "El lun, 3 nov 2026, Mark escribió:"
-_QUOTE_HEADER = re.compile(r"^(On .+ wrote:|El .+ escribió:)\s*$", re.IGNORECASE)
-
-
-def strip_quoted(text):
-    """Removes the quoted earlier messages a reply carries below the new text.
-
-    The agent already gets the earlier messages separately (the thread), so the
-    quote would only repeat them.
-    """
-    kept = []
-    for line in text.splitlines():
-        if _QUOTE_HEADER.match(line.strip()):
-            break
-        if not line.lstrip().startswith(">"):
-            kept.append(line)
-    return "\n".join(kept).strip()
-
-
 def get_headers(message):
-    """Turns the header list [{"name": ..., "value": ...}] into a dict."""
-    return {h["name"].lower(): h["value"] for h in message["payload"]["headers"]}
+    """Turns the header list [{"name": ..., "value": ...}] into a dict (lowercase names)."""
+    return {h["name"].lower(): h["value"] for h in message.get("payload", {}).get("headers", [])}
+
+
+def to_thread_messages(messages):
+    """Gmail thread messages -> ThreadMessage (labels say who sent it and what's a draft)."""
+    return [
+        ThreadMessage(
+            id=m["id"],
+            date=int(m["internalDate"]) / 1000,
+            from_me="SENT" in m.get("labelIds", []),
+            is_draft="DRAFT" in m.get("labelIds", []),
+        )
+        for m in messages
+    ]
+
+
+def has_newer_draft(thread_messages, message_id):
+    return _has_newer_draft(to_thread_messages(thread_messages), message_id)
+
+
+def email_to_answer(thread_messages):
+    """ID of the email in this Gmail thread that still needs a reply, or None."""
+    return _email_to_answer(to_thread_messages(thread_messages))
 
 
 def format_thread(messages, current_id):
@@ -104,58 +79,14 @@ def format_thread(messages, current_id):
     earlier = [
         m for m in messages if m["id"] != current_id and "DRAFT" not in m.get("labelIds", [])
     ]
-    earlier = earlier[-THREAD_MAX_MESSAGES:]
-    blocks = []
+    entries = []
     for m in earlier:
         h = get_headers(m)
-        body = strip_quoted(extract_text(m["payload"]))[:THREAD_MAX_CHARS]
-        blocks.append(f"From: {h.get('from', '')}\nDate: {h.get('date', '')}\n{body}")
-    return "\n---\n".join(blocks)
-
-
-def has_newer_draft(thread_messages, message_id):
-    """True if the thread already has a draft written after `message_id` arrived.
-
-    That draft answers this email (or a later one), so there's nothing to do.
-    An older draft doesn't count: if the client writes again before you send
-    it, the new email still gets its own draft.
-    """
-    received = next(int(m["internalDate"]) for m in thread_messages if m["id"] == message_id)
-    return any(
-        "DRAFT" in m.get("labelIds", []) and int(m["internalDate"]) > received
-        for m in thread_messages
-    )
-
-
-def email_to_answer(thread_messages):
-    """ID of the email in this thread that still needs a reply, or None.
-
-    That's the latest message of the conversation (drafts don't count) when:
-    - it wasn't sent by you (no "SENT" label): otherwise you already answered;
-    - and there's no draft written after it: otherwise it's already drafted.
-    Whether you opened it doesn't matter: reading an email isn't answering it.
-    """
-    conversation = [m for m in thread_messages if "DRAFT" not in m.get("labelIds", [])]
-    if not conversation:
-        return None
-    last = max(conversation, key=lambda m: int(m["internalDate"]))
-    if "SENT" in last.get("labelIds", []):
-        return None
-    if has_newer_draft(thread_messages, last["id"]):
-        return None
-    return last["id"]
+        entries.append((h.get("from", ""), h.get("date", ""), extract_text(m["payload"])))
+    return format_thread_text(entries)
 
 
 def build_reply(original_headers, text):
     """The reply as a raw (base64url) email, ready for the Gmail drafts API."""
-    h = original_headers
-    subject = h.get("subject", "")
-    reply = EmailMessage()
-    reply["To"] = h.get("reply-to") or h.get("from", "")
-    reply["Subject"] = subject if subject.lower().startswith("re:") else f"Re: {subject}"
-    # These two headers make Gmail (and other clients) show it as a reply in the thread
-    if "message-id" in h:
-        reply["In-Reply-To"] = h["message-id"]
-        reply["References"] = h["message-id"]
-    reply.set_content(text)
-    return base64.urlsafe_b64encode(reply.as_bytes()).decode()
+    raw = build_reply_message(original_headers, text).as_bytes()
+    return base64.urlsafe_b64encode(raw).decode()

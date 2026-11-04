@@ -1,10 +1,10 @@
 """
-Processes the inbox: for each new email with the agent label, Claude writes
-the reply and it is saved as a DRAFT in the same Gmail thread.
+Processes the inbox: for each email the agent handles that still needs a reply,
+Claude writes it and it is saved as a DRAFT in the same conversation.
 It never sends anything: you review the draft and send it.
 
 Run it with: uv run --env-file .env python process_inbox.py
-(uses the Claude API: each new email is a paid call)
+(uses the Claude API: each new email is a paid call; the mailbox is MAIL_PROVIDER, see inboxes.py)
 
 The profile (prompt + tools) is chosen with --profile; "freelance" by default:
     uv run --env-file .env python process_inbox.py --profile store
@@ -20,14 +20,15 @@ from typing import Protocol
 import anthropic
 
 from drafter import draft_reply
-from gmail_client import GmailInbox
+from inboxes import open_inbox
 from models import Email
 from profiles import PROFILES
 
 
 class Inbox(Protocol):
-    """What the processing needs from an inbox. GmailInbox fulfills it, and the
-    tests pass a fake one: this file doesn't depend on Gmail itself."""
+    """What the processing needs from an inbox. GmailInbox, OutlookInbox and
+    ImapInbox fulfill it (see inboxes.py), and the tests pass a fake one: this
+    file doesn't depend on any mail provider."""
 
     def list_pending(self) -> list[str]: ...
     def read_email(self, message_id: str) -> Email: ...
@@ -35,7 +36,7 @@ class Inbox(Protocol):
 
 
 async def process_new_emails(profile, inbox: Inbox, draft_fn=draft_reply):
-    # The Gmail client is blocking: asyncio.to_thread runs each call in a worker
+    # The mail clients are blocking: asyncio.to_thread runs each call in a worker
     # thread, so the server keeps answering other requests while it waits.
     # Only emails without a newer draft come back: no state file needed.
     new_ids = await asyncio.to_thread(inbox.list_pending)
@@ -54,17 +55,17 @@ async def process_new_emails(profile, inbox: Inbox, draft_fn=draft_reply):
         await asyncio.to_thread(inbox.create_draft, message_id, draft.draft)
         print(f"  Intent: {draft.intent} | Urgency: {draft.urgency}")
         print(f"  Internal notes: {draft.internal_notes}")
-        print("  ✅ Draft created in Gmail")
+        print("  ✅ Draft created")
 
 
 async def watch(profile, minutes):
     """Processes the inbox forever, pausing `minutes` between rounds."""
     while True:
         try:
-            inbox = await asyncio.to_thread(GmailInbox.connect)
+            inbox = await asyncio.to_thread(open_inbox)
             await process_new_emails(profile, inbox)
         except Exception as e:
-            # Here any error is caught (e.g. the internet went down and Gmail failed):
+            # Here any error is caught (e.g. the internet went down and the mailbox failed):
             # the process must stay alive and retry on the next round.
             print(f"Error in this round, retrying in {minutes} min: {e!r}")
         print(f"\nNext check in {minutes} min (Ctrl+C to stop)")
@@ -79,4 +80,4 @@ if __name__ == "__main__":
     if args.every:
         asyncio.run(watch(args.profile, args.every))
     else:
-        asyncio.run(process_new_emails(args.profile, GmailInbox.connect()))
+        asyncio.run(process_new_emails(args.profile, open_inbox()))

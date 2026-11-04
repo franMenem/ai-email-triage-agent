@@ -11,3 +11,6 @@ token.json
 
 # Sample database: generated automatically from data/orders.csv and db.py
 data/*.db
+
+# Microsoft login (Outlook / Microsoft 365)
+ms_token.json

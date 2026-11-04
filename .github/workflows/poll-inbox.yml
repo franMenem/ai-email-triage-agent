@@ -1,0 +1,20 @@
+name: poll-inbox
+
+# Only for IMAP mailboxes, which have no push notifications: asks the server to
+# check the inbox every 10 minutes. Gmail and Outlook don't need it (they use
+# webhooks), so the schedule is off: uncomment it to turn it on.
+on:
+  # schedule:
+  #   - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call /process
+        env:
+          WEBHOOK_TOKEN: ${{ secrets.WEBHOOK_TOKEN }}
+        run: >
+          curl --fail --silent --show-error -X POST
+          "https://ai-email-triage-agent.fastapicloud.dev/process?token=${WEBHOOK_TOKEN}"

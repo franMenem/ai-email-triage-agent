@@ -7,6 +7,7 @@ dependency_overrides, and the processing is swapped for a recorder.
 import base64
 import json
 import logging
+from datetime import datetime
 
 import pytest
 from fastapi.testclient import TestClient
@@ -19,7 +20,11 @@ TOKEN = "test-token"
 
 class FakeInbox:
     def start_watch(self):
-        return {"historyId": "1", "expiration": "1762871000000"}
+        return datetime(2026, 11, 11, 14, 0)
+
+
+class FakeImapInbox:
+    """No start_watch: like IMAP, it has no push notifications."""
 
 
 @pytest.fixture(autouse=True)
@@ -99,3 +104,44 @@ def test_access_logs_hide_the_token():
     line = record.getMessage()
     assert "secret123" not in line
     assert "/gmail-webhook?token=***&x=1" in line
+
+
+def test_renew_watch_explains_when_the_provider_has_no_push():
+    main.app.dependency_overrides[main.get_inbox_factory] = lambda: FakeImapInbox
+    response = client.post(f"/renew-watch?token={TOKEN}")
+    assert response.status_code == 400
+    assert "/process" in response.json()["detail"]
+
+
+def test_process_endpoint_needs_the_token_and_processes(monkeypatch):
+    calls = []
+
+    async def fake_process(profile, inbox):
+        calls.append(profile)
+
+    monkeypatch.setattr(main, "process_new_emails", fake_process)
+    assert client.post("/process?token=wrong").status_code == 403
+    assert client.post(f"/process?token={TOKEN}").status_code == 202
+    assert len(calls) == 1
+
+
+def test_outlook_webhook_answers_the_validation_handshake():
+    response = client.post("/outlook-webhook?validationToken=abc%20123")
+    assert response.status_code == 200
+    assert response.text == "abc 123"
+    assert response.headers["content-type"].startswith("text/plain")
+
+
+def test_outlook_webhook_checks_client_state(monkeypatch, fake_gmail):
+    calls = []
+
+    async def fake_process(profile, inbox):
+        calls.append(profile)
+
+    monkeypatch.setattr(main, "process_new_emails", fake_process)
+    bad = {"value": [{"clientState": "wrong", "resource": "me/messages/1"}]}
+    assert client.post("/outlook-webhook", json=bad).status_code == 403
+    assert fake_gmail == [], "A notification with a wrong clientState never opens the mailbox"
+    good = {"value": [{"clientState": TOKEN, "resource": "me/messages/1"}]}
+    assert client.post("/outlook-webhook", json=good).status_code == 202
+    assert len(calls) == 1

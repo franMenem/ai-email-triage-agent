@@ -10,10 +10,17 @@ HTTP endpoints.
   label. Answers right away (Pub/Sub only needs a 2xx) and processes the inbox
   in the background, the same way process_inbox.py does.
 
-- POST /renew-watch: renews the Gmail watch, which expires after 7 days.
-  Something must call it every day (see the deploy section of the README).
+- POST /outlook-webhook: the same for Outlook / Microsoft 365 (Graph subscriptions).
 
-The last two are public URLs, so they require ?token=<WEBHOOK_TOKEN>.
+- POST /process: checks the mailbox now. For IMAP, which has no push: a scheduler
+  calls it every few minutes.
+
+- POST /renew-watch: renews the Gmail watch or the Outlook subscription, which
+  expire after 7 days. A daily GitHub Actions cron calls it.
+
+/gmail-webhook, /process and /renew-watch require ?token=<WEBHOOK_TOKEN>;
+/outlook-webhook checks the same secret in the clientState Graph sends back.
+The mailbox is chosen with MAIL_PROVIDER (see inboxes.py).
 
 Run it with: uv run --env-file .env fastapi dev main.py
 and open http://127.0.0.1:8000/docs
@@ -26,14 +33,14 @@ import logging
 import os
 import re
 import secrets
-from datetime import datetime
 
 import anthropic
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
+from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel
 
 from drafter import draft_reply
-from gmail_client import GmailInbox
+from inboxes import open_inbox
 from models import Email
 from process_inbox import process_new_emails
 
@@ -120,10 +127,10 @@ processing_lock = asyncio.Lock()
 
 
 def get_inbox_factory():
-    """How to open the Gmail inbox, as a FastAPI dependency. It's a factory (not the
+    """How to open the configured mailbox (MAIL_PROVIDER), as a FastAPI dependency. It's a factory (not the
     inbox itself) so the login happens only when it's needed, and the tests swap it
     for a fake one with app.dependency_overrides."""
-    return GmailInbox.connect
+    return open_inbox
 
 
 async def process_in_background(inbox_factory):
@@ -155,8 +162,47 @@ async def gmail_webhook(
     background_tasks.add_task(process_in_background, inbox_factory)
 
 
+@app.post("/outlook-webhook")
+async def outlook_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    validationToken: str | None = None,
+    inbox_factory=Depends(get_inbox_factory),
+):
+    """Microsoft Graph -> here, when an email arrives in Outlook.
+
+    Graph can't send a token in the URL like Pub/Sub, so the check is different:
+    - when the subscription is created, Graph calls with ?validationToken=... and
+      expects it back as plain text within 10 seconds;
+    - every notification carries clientState, which must be our WEBHOOK_TOKEN.
+    """
+    if validationToken:
+        return PlainTextResponse(validationToken)
+    expected = os.environ.get("WEBHOOK_TOKEN")
+    if not expected:
+        raise HTTPException(status_code=503, detail="WEBHOOK_TOKEN is not configured")
+    notifications = (await request.json()).get("value", [])
+    if not notifications or not all(
+        secrets.compare_digest(n.get("clientState") or "", expected) for n in notifications
+    ):
+        raise HTTPException(status_code=403, detail="Invalid clientState")
+    background_tasks.add_task(process_in_background, inbox_factory)
+    return Response(status_code=202)
+
+
+@app.post("/process", status_code=202, dependencies=[Depends(require_token)])
+async def process_now(background_tasks: BackgroundTasks, inbox_factory=Depends(get_inbox_factory)):
+    """Checks the mailbox now. For providers without push notifications (IMAP):
+    any scheduler can call it every few minutes (see the README)."""
+    background_tasks.add_task(process_in_background, inbox_factory)
+
+
 @app.post("/renew-watch", dependencies=[Depends(require_token)])
 def renew_watch(inbox_factory=Depends(get_inbox_factory)):
-    response = inbox_factory().start_watch()
-    expires = datetime.fromtimestamp(int(response["expiration"]) / 1000)
+    inbox = inbox_factory()
+    if not hasattr(inbox, "start_watch"):
+        raise HTTPException(
+            status_code=400, detail="This mail provider has no push notifications: use POST /process"
+        )
+    expires = inbox.start_watch()
     return {"status": "watch renewed", "expires": expires.isoformat(timespec="minutes")}

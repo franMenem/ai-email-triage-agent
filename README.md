@@ -2,9 +2,9 @@
 
 [![tests](https://github.com/franMenem/ai-email-triage-agent/actions/workflows/tests.yml/badge.svg)](https://github.com/franMenem/ai-email-triage-agent/actions/workflows/tests.yml)
 
-An AI agent that reads incoming client emails in Gmail, classifies them and leaves a ready-to-edit reply **as a draft in the same thread**. It never sends anything: a person reviews every draft before it goes out.
+An AI agent that reads incoming client emails, classifies them and leaves a ready-to-edit reply **as a draft in the same thread**. It never sends anything: a person reviews every draft before it goes out.
 
-Built with Python, Claude (Anthropic API) and the Gmail API. I use it every day with my own freelance clients.
+Works with **Gmail / Google Workspace, Outlook / Microsoft 365, and any IMAP mailbox** (iCloud, Yahoo, AOL, Zoho, GMX, Proton…). Built with Python and Claude (Anthropic API). I use it every day with my own freelance clients.
 
 ## How it works
 
@@ -32,12 +32,53 @@ There is no state file: an email is skipped once its thread has a draft written 
 | `prompts.py`, `profiles.py` | System prompts, and which prompt + tools each profile uses |
 | `drafter.py` | Talks to Claude: prompt, tool-calling loop, structured output |
 | `tools.py`, `db.py` | The tools Claude can call, and the only file that knows where the data lives |
-| `gmail_parsing.py` | Pure functions: Gmail API data -> text (HTML, quotes, thread, which emails are answered) |
-| `gmail_client.py` | `GmailInbox`: the only code that calls the Gmail API (read, draft, watch). Never sends. |
-| `process_inbox.py` | The flow: pending emails -> Claude -> drafts. Depends on an `Inbox` protocol, not on Gmail |
-| `main.py` | FastAPI: `/emails`, `/gmail-webhook`, `/renew-watch` |
+| `mail_core.py` | Provider-independent rules: which email still needs a reply, automated-mail detection, HTML to text, quotes, reply building |
+| `gmail_client.py` + `gmail_parsing.py` | `GmailInbox`: Gmail API (read, draft, watch) |
+| `outlook_client.py` | `OutlookInbox`: Microsoft Graph (read, draft, subscription) |
+| `imap_client.py` | `ImapInbox`: IMAP (read, draft in the Drafts folder) |
+| `inboxes.py` | Picks the mailbox with `MAIL_PROVIDER` |
+| `process_inbox.py` | The flow: pending emails -> Claude -> drafts. Depends on an `Inbox` protocol, not on any provider |
+| `main.py` | FastAPI: `/emails`, `/gmail-webhook`, `/outlook-webhook`, `/process`, `/renew-watch` |
 
-Dependencies point inwards: the flow receives the inbox and the Claude function as parameters, so the tests run it with fakes, and the endpoints get the inbox through FastAPI's `Depends` (swapped with `dependency_overrides` in the tests). The token check is a route dependency, so a request with a wrong token never reaches Gmail.
+None of the inboxes has a method that sends email.
+
+Dependencies point inwards: the flow receives the inbox and the Claude function as parameters, so the tests run it with fakes, and the endpoints get the inbox through FastAPI's `Depends` (swapped with `dependency_overrides` in the tests). The token check is a route dependency, so a request with a wrong token never reaches the mailbox.
+
+## Mail providers
+
+Choose the mailbox with `MAIL_PROVIDER` and what the agent handles with `AGENT_FILTER`:
+
+| `MAIL_PROVIDER` | Mailboxes | `AGENT_FILTER` (default `agente`) | New emails arrive by |
+|---|---|---|---|
+| `gmail` (default) | Gmail, Google Workspace | a **label** (set by a Gmail filter) | Push: Gmail watch -> Pub/Sub -> `/gmail-webhook` |
+| `outlook` | Outlook.com, Hotmail, Microsoft 365 | a **category** (set by an Outlook rule) | Push: Graph subscription -> `/outlook-webhook` |
+| `imap` | iCloud, Yahoo, AOL, Zoho, GMX, Mail.com, Proton (Bridge), any IMAP server | a **folder** (an email rule moves the emails there) | Polling: `process_inbox.py --every 5`, or a scheduler calling `/process` |
+
+**Label or every email?** With `AGENT_FILTER=*` the agent reads every incoming email (Gmail: Primary tab, Outlook: Focused inbox, IMAP: INBOX) and skips what's clearly automated: `List-Unsubscribe`, `Precedence: bulk`, auto-replies and no-reply senders, in English and Spanish (`noreply`, `noresponder`, `sin-respuesta`…). Tested on a real inbox, that still lets through things like a club's news or a recruiting platform's notices, which don't mark themselves as automated. So the recommended setup is a filter for the senders you want answered, and `*` is for inboxes that only get real conversations.
+
+To make the agent ignore a thread, remove its label / category / folder (deleting the draft isn't enough: the email is still unanswered, so it gets a new one).
+
+<details>
+<summary>Outlook / Microsoft 365 setup</summary>
+
+1. In [Microsoft Entra](https://entra.microsoft.com) -> App registrations -> New registration. Supported account types: *any organizational directory and personal Microsoft accounts*.
+2. Authentication -> **Allow public client flows: Yes**.
+3. API permissions -> Microsoft Graph -> Delegated: `Mail.ReadWrite`, `User.Read`. (`Mail.Send` is not requested: the app can't send email.)
+4. `MS_CLIENT_ID=<Application (client) ID>` and run `uv run python outlook_client.py --login` (device code: enter the code at microsoft.com/devicelogin). It saves `ms_token.json`; on a server, its contents go in `MS_TOKEN_CACHE`.
+5. In Outlook, a rule that adds the category `agente` to your clients' emails.
+6. With the server deployed and `PUBLIC_URL` set, `POST /renew-watch` creates the subscription (and the daily cron keeps it alive).
+</details>
+
+<details>
+<summary>IMAP setup (iCloud, Yahoo, AOL, Zoho, GMX, Mail.com, Proton)</summary>
+
+1. Create an **app password** in your provider's security settings (required by iCloud, Yahoo, AOL, Zoho and GMX when 2FA is on; never use your normal password).
+2. `IMAP_PRESET` = `icloud` | `yahoo` | `aol` | `zoho` | `gmx` | `mailcom` | `proton` (or `IMAP_HOST` / `IMAP_PORT` for any other server), plus `IMAP_USER` and `IMAP_PASSWORD`.
+3. Create a folder `agente` and a mail rule that moves your clients' emails there (or `AGENT_FILTER=*` for the INBOX).
+4. Run `uv run --env-file .env python process_inbox.py --every 5`, or on a server turn on the schedule in `.github/workflows/poll-inbox.yml`, which calls `POST /process`.
+
+Sent and Drafts folders are found by their standard flags (`\Sent`, `\Drafts`), with the usual names as fallback. Conversations are rebuilt from the `Message-ID` / `In-Reply-To` / `References` headers, and drafts carry them, so they show up as replies.
+</details>
 
 ## Profiles
 
@@ -182,7 +223,9 @@ uv run pytest
 | `tests/test_gmail_parsing.py` | HTML-only emails, quoted replies, thread context, which email still needs a reply |
 | `tests/test_process_inbox.py` | The processing flow with a fake inbox: every email gets its draft, a Claude error only skips that email |
 | `tests/test_prompts.py` | Prompts keep the `<email>` block, `ALERT:` and the tool names |
-| `tests/test_webhook.py` | Webhook and watch renewal: a wrong token never reaches Gmail, 204 + background processing, token hidden in logs |
+| `tests/test_webhook.py` | Webhooks, `/process` and renewal: a wrong token never reaches the mailbox, Outlook validation handshake and clientState, token hidden in logs |
+| `tests/test_imap.py` | `ImapInbox` against a fake IMAP server: the whole cycle (pending, draft, not pending, the client writes again), folders by flag, all-mail mode |
+| `tests/test_outlook.py` | `OutlookInbox` against a fake Microsoft Graph: pending, thread, draft, subscription created then renewed |
 
 ## Evals
 
@@ -207,7 +250,7 @@ Compare a model with `--model claude-sonnet-5-5`. Next steps: harder cases, and 
 
 ## Stack
 
-Python 3.12 · Anthropic SDK (Claude, tool calling, structured outputs) · Gmail API (OAuth) · SQLite · FastAPI · Pydantic · pytest · GitHub Actions · uv
+Python 3.12 · Anthropic SDK (Claude, tool calling, structured outputs) · Gmail API · Microsoft Graph (MSAL) · IMAP · SQLite · FastAPI · Pydantic · pytest · GitHub Actions · FastAPI Cloud · uv
 
 ## Roadmap
 
@@ -222,6 +265,7 @@ Python 3.12 · Anthropic SDK (Claude, tool calling, structured outputs) · Gmail
 - [x] Evals across models; Haiku chosen as default
 - [x] pytest + GitHub Actions
 - [x] Gmail push notifications (`watch` + Pub/Sub) to a webhook
-- [x] Deployed on FastAPI Cloud, with a daily watch renewal
+- [x] Deployed on FastAPI Cloud, with a daily watch renewal and auto-deploy on push
+- [x] Outlook / Microsoft 365 and IMAP mailboxes, chosen with `MAIL_PROVIDER`
 - [ ] LLM judge for draft quality, and tracing
 - [ ] Documents/FAQ search (RAG) for questions that aren't in a table
