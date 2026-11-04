@@ -18,26 +18,8 @@ client = anthropic.AsyncAnthropic()
 # Sonnet on every case, and the cheapest and fastest. The evals can pass another one.
 MODEL = "claude-haiku-5-5"
 
-DRAFT_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "draft": {"type": "string"},
-        "internal_notes": {"type": "string"},
-        "intent": {
-            "type": "string",
-            "enum": [
-                "order_status",
-                "return_request",
-                "complaint",
-                "general_inquiry",
-                "other",
-            ],
-        },
-        "urgency": {"type": "string", "enum": ["high", "medium", "low"]},
-    },
-    "required": ["draft", "internal_notes", "intent", "urgency"],
-    "additionalProperties": False,
-}
+# The structured-output schema comes from the Pydantic model: one source of truth
+DRAFT_SCHEMA = Draft.model_json_schema()
 
 
 async def call_claude(messages, profile: Profile, model: str):

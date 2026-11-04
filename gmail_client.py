@@ -1,26 +1,26 @@
 """
-Gmail client: read the emails with the agent label and leave drafts.
+Gmail client: the only file that talks to the Gmail API.
 
 `connect()` is Google's standard login (OAuth). The first time it opens the
 browser to grant access; then it saves token.json and doesn't ask again.
 credentials.json and token.json are in .gitignore. On a server, the token
 comes from the GMAIL_TOKEN_JSON environment variable instead.
 
-Permissions (SCOPES): read emails and create drafts. This file NEVER has a
-function that sends email: a person reviews every draft and sends it.
+`GmailInbox` wraps the API with the few operations the agent needs. The parsing
+of what the API returns lives in gmail_parsing.py.
 
-Run it with: uv run python gmail_client.py   (doesn't call the Claude API)
+Permissions (SCOPES): read emails and create drafts. This file NEVER has a
+method that sends email: a person reviews every draft and sends it.
+
+Run it with: uv run python gmail_client.py           (lists pending emails)
+             uv run python gmail_client.py --watch   (starts or renews the Gmail watch)
 """
 
-import base64
 import json
 import os
-import re
 import sys
 from datetime import datetime
-from email.message import EmailMessage
 from email.utils import parseaddr
-from html.parser import HTMLParser
 from pathlib import Path
 
 from google.auth.transport.requests import Request
@@ -28,6 +28,14 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
+from gmail_parsing import (
+    build_reply,
+    extract_text,
+    format_thread,
+    get_headers,
+    has_newer_draft,
+    strip_quoted,
+)
 from models import Email
 
 SCOPES = [
@@ -38,9 +46,6 @@ SCOPES = [
 AGENT_LABEL = "agente"
 # Pub/Sub topic where Gmail publishes a notification when a labeled email arrives
 PUBSUB_TOPIC = "projects/ai-email-triage-agent-513617/topics/gmail-agent"
-# How much of the thread Claude sees: the last N earlier messages, each cut to M characters
-THREAD_MAX_MESSAGES = 10
-THREAD_MAX_CHARS = 2000
 
 BASE_DIR = Path(__file__).parent
 CREDENTIALS_PATH = BASE_DIR / "credentials.json"
@@ -71,221 +76,89 @@ def connect():
     return build("gmail", "v1", credentials=creds)
 
 
-def has_newer_draft(thread_messages, message_id):
-    """True if the thread already has a draft written after `message_id` arrived.
+class GmailInbox:
+    """The inbox operations the agent needs, on top of a Gmail API client."""
 
-    That draft answers this email (or a later one), so there's nothing to do.
-    An older draft doesn't count: if the client writes again before you send
-    it, the new email still gets its own draft.
-    """
-    received = next(int(m["internalDate"]) for m in thread_messages if m["id"] == message_id)
-    return any(
-        "DRAFT" in m.get("labelIds", []) and int(m["internalDate"]) > received
-        for m in thread_messages
-    )
+    def __init__(self, service):
+        self._messages = service.users().messages()
+        self._threads = service.users().threads()
+        self._service = service
 
+    @classmethod
+    def connect(cls):
+        return cls(connect())
 
-def list_pending(service):
-    """IDs of the unread emails with the agent label that don't have a draft yet.
+    def list_pending(self):
+        """IDs of the unread emails with the agent label that don't have a draft yet.
 
-    This is what makes the agent idempotent without keeping any state: an email
-    is skipped once its thread has a draft newer than it. Delete the draft and the
-    next run writes a new one. If the Claude call fails, no draft is created, so
-    it's retried.
-    """
-    response = (
-        service.users()
-        .messages()
-        .list(userId="me", q=f"label:{AGENT_LABEL} is:unread")
-        .execute()
-    )
-    pending = []
-    for m in response.get("messages", []):
-        thread = (
-            service.users().threads().get(userId="me", id=m["threadId"], format="minimal").execute()
+        This is what makes the agent idempotent without keeping any state: an email
+        is skipped once its thread has a draft newer than it. Delete the draft and
+        the next run writes a new one. If the Claude call fails, no draft is
+        created, so it's retried.
+        """
+        response = self._messages.list(userId="me", q=f"label:{AGENT_LABEL} is:unread").execute()
+        pending = []
+        for m in response.get("messages", []):
+            thread = self._threads.get(userId="me", id=m["threadId"], format="minimal").execute()
+            if not has_newer_draft(thread["messages"], m["id"]):
+                pending.append(m["id"])
+        return pending
+
+    def read_email(self, message_id):
+        """Fetches a Gmail message, with its thread, as the `Email` the agent uses."""
+        message = self._messages.get(userId="me", id=message_id, format="full").execute()
+        thread = self._threads.get(userId="me", id=message["threadId"], format="full").execute()
+        h = get_headers(message)
+        _, address = parseaddr(h.get("from", ""))  # "Mark <k@x.com>" -> "k@x.com"
+        return Email(
+            message_id=message_id,
+            sender=address,
+            subject=h.get("subject", ""),
+            body=strip_quoted(extract_text(message["payload"])),
+            thread=format_thread(thread["messages"], message_id),
         )
-        if not has_newer_draft(thread["messages"], m["id"]):
-            pending.append(m["id"])
-    return pending
 
+    def create_draft(self, message_id, text):
+        """Saves `text` as a draft reply, inside the original email's thread."""
+        original = self._messages.get(userId="me", id=message_id, format="metadata").execute()
+        raw = build_reply(get_headers(original), text)
+        body = {"message": {"raw": raw, "threadId": original["threadId"]}}
+        return self._service.users().drafts().create(userId="me", body=body).execute()
 
-class _TextFromHTML(HTMLParser):
-    """Keeps the visible text of an HTML email (skips <script> and <style>)."""
+    def label_id(self, name):
+        """Gmail APIs take label IDs (e.g. "Label_12"), not names: finds the ID of `name`."""
+        labels = self._service.users().labels().list(userId="me").execute()["labels"]
+        for label in labels:
+            if label["name"] == name:
+                return label["id"]
+        raise ValueError(f"There is no Gmail label called {name!r}")
 
-    def __init__(self):
-        super().__init__()
-        self.parts = []
-        self._skip = False
+    def start_watch(self):
+        """Asks Gmail to publish to PUBSUB_TOPIC whenever an email gets the agent label.
 
-    def handle_starttag(self, tag, attrs):
-        if tag in ("script", "style"):
-            self._skip = True
-        elif tag in ("br", "p", "div", "li", "tr"):
-            self.parts.append("\n")
-
-    def handle_endtag(self, tag):
-        if tag in ("script", "style"):
-            self._skip = False
-
-    def handle_data(self, data):
-        if not self._skip:
-            self.parts.append(data)
-
-
-def html_to_text(html):
-    parser = _TextFromHTML()
-    parser.feed(html)
-    text = "".join(parser.parts)
-    return re.sub(r"\n\s*\n+", "\n\n", text).strip()
-
-
-def _decode(part):
-    return base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8", "replace")
-
-
-def _find_part(payload, mime_type):
-    if payload.get("mimeType") == mime_type and payload.get("body", {}).get("data"):
-        return payload
-    for part in payload.get("parts", []):
-        found = _find_part(part, mime_type)
-        if found:
-            return found
-    return None
-
-
-def extract_text(payload):
-    """Returns the body of a Gmail message as plain text.
-
-    Gmail sends the body in base64 (URL variant) and, if the email has HTML
-    or attachments, split into nested "parts". Prefers the text/plain part;
-    if the email only has HTML, converts it to text.
-    """
-    plain = _find_part(payload, "text/plain")
-    if plain:
-        return _decode(plain)
-    html = _find_part(payload, "text/html")
-    return html_to_text(_decode(html)) if html else ""
-
-
-# "On Mon, 3 Nov 2026, Mark <k@x.com> wrote:" / "El lun, 3 nov 2026, Mark escribió:"
-_QUOTE_HEADER = re.compile(r"^(On .+ wrote:|El .+ escribió:)\s*$", re.IGNORECASE)
-
-
-def strip_quoted(text):
-    """Removes the quoted earlier messages a reply carries below the new text.
-
-    The agent already gets the earlier messages separately (the thread), so the
-    quote would only repeat them.
-    """
-    kept = []
-    for line in text.splitlines():
-        if _QUOTE_HEADER.match(line.strip()):
-            break
-        if not line.lstrip().startswith(">"):
-            kept.append(line)
-    return "\n".join(kept).strip()
-
-
-def get_headers(message):
-    """Turns the header list [{"name": ..., "value": ...}] into a dict."""
-    return {h["name"].lower(): h["value"] for h in message["payload"]["headers"]}
-
-
-def format_thread(messages, current_id):
-    """Earlier messages of the thread (oldest first), as text for Claude."""
-    # Drafts also show up as thread messages: they're not part of the conversation
-    earlier = [
-        m for m in messages if m["id"] != current_id and "DRAFT" not in m.get("labelIds", [])
-    ]
-    earlier = earlier[-THREAD_MAX_MESSAGES:]
-    blocks = []
-    for m in earlier:
-        h = get_headers(m)
-        body = strip_quoted(extract_text(m["payload"]))[:THREAD_MAX_CHARS]
-        blocks.append(f"From: {h.get('from', '')}\nDate: {h.get('date', '')}\n{body}")
-    return "\n---\n".join(blocks)
-
-
-def read_email(service, message_id):
-    """Fetches a Gmail message, with its thread, as the `Email` the agent uses."""
-    message = service.users().messages().get(userId="me", id=message_id, format="full").execute()
-    thread = service.users().threads().get(userId="me", id=message["threadId"], format="full").execute()
-    h = get_headers(message)
-    _, address = parseaddr(h.get("from", ""))  # "Mark <k@x.com>" -> "k@x.com"
-    return Email(
-        message_id=message_id,
-        sender=address,
-        subject=h.get("subject", ""),
-        body=strip_quoted(extract_text(message["payload"])),
-        thread=format_thread(thread["messages"], message_id),
-    )
-
-
-def create_draft(service, message_id, text):
-    """Saves `text` as a draft reply, inside the original email's thread."""
-    original = (
-        service.users().messages().get(userId="me", id=message_id, format="metadata").execute()
-    )
-    h = get_headers(original)
-    subject = h.get("subject", "")
-
-    reply = EmailMessage()
-    reply["To"] = h.get("reply-to") or h.get("from", "")
-    reply["Subject"] = subject if subject.lower().startswith("re:") else f"Re: {subject}"
-    # These two headers make Gmail (and other clients) show it as a reply in the thread
-    if "message-id" in h:
-        reply["In-Reply-To"] = h["message-id"]
-        reply["References"] = h["message-id"]
-    reply.set_content(text)
-
-    raw = base64.urlsafe_b64encode(reply.as_bytes()).decode()
-    return (
-        service.users()
-        .drafts()
-        .create(userId="me", body={"message": {"raw": raw, "threadId": original["threadId"]}})
-        .execute()
-    )
-
-
-def label_id(service, name):
-    """Gmail APIs take label IDs (e.g. "Label_12"), not names: finds the ID of `name`."""
-    labels = service.users().labels().list(userId="me").execute()["labels"]
-    for label in labels:
-        if label["name"] == name:
-            return label["id"]
-    raise ValueError(f"There is no Gmail label called {name!r}")
-
-
-def start_watch(service):
-    """Asks Gmail to publish to PUBSUB_TOPIC whenever an email gets the agent label.
-
-    A watch lasts 7 days: it must be renewed before `expiration` (calling this again
-    renews it). Returns {"historyId": ..., "expiration": <milliseconds since 1970>}.
-    """
-    body = {
-        "topicName": PUBSUB_TOPIC,
-        "labelIds": [label_id(service, AGENT_LABEL)],
-        "labelFilterBehavior": "include",
-    }
-    return service.users().watch(userId="me", body=body).execute()
+        A watch lasts 7 days: it must be renewed before `expiration` (calling this
+        again renews it). Returns {"historyId": ..., "expiration": <ms since 1970>}.
+        """
+        body = {
+            "topicName": PUBSUB_TOPIC,
+            "labelIds": [self.label_id(AGENT_LABEL)],
+            "labelFilterBehavior": "include",
+        }
+        return self._service.users().watch(userId="me", body=body).execute()
 
 
 if __name__ == "__main__":
+    inbox = GmailInbox.connect()
     if "--watch" in sys.argv:
-        # uv run python gmail_client.py --watch   -> starts (or renews) the Gmail watch
-        response = start_watch(connect())
+        response = inbox.start_watch()
         expires = datetime.fromtimestamp(int(response["expiration"]) / 1000)
         print(f"Watch active. historyId={response['historyId']} | expires {expires:%Y-%m-%d %H:%M}")
         sys.exit()
 
-    service = connect()
-    profile = service.users().getProfile(userId="me").execute()
-    print("Connected as:", profile["emailAddress"])
-
-    ids = list_pending(service)
+    ids = inbox.list_pending()
     print(f"Pending emails with the '{AGENT_LABEL}' label and no draft yet:", ids)
     for message_id in ids:
-        mail = read_email(service, message_id)
+        mail = inbox.read_email(message_id)
         print(f"- From: {mail.sender} | Subject: {mail.subject} | {mail.body[:80]!r}")
         if mail.thread:
             print(f"  Thread: {mail.thread[:200]!r}")

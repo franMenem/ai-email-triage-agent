@@ -24,6 +24,21 @@ Gmail filter ──> label "agente" ──> process_inbox.py ──> Claude ─�
 
 There is no state file: an email is skipped once its thread has a draft written after it, so the same email never gets two drafts, but a client who writes again before you answer still gets a new one. Delete a draft and the next run writes a new one; if the Claude call fails, no draft is created and the email is retried. This also means it can run on a server without local storage.
 
+## Code structure
+
+| File | Responsibility |
+|---|---|
+| `models.py` | `Email` and `Draft` (Pydantic). The JSON schema Claude must follow is generated from `Draft`. |
+| `prompts.py`, `profiles.py` | System prompts, and which prompt + tools each profile uses |
+| `drafter.py` | Talks to Claude: prompt, tool-calling loop, structured output |
+| `tools.py`, `db.py` | The tools Claude can call, and the only file that knows where the data lives |
+| `gmail_parsing.py` | Pure functions: Gmail API data -> text (HTML, quotes, thread, which emails are answered) |
+| `gmail_client.py` | `GmailInbox`: the only code that calls the Gmail API (read, draft, watch). Never sends. |
+| `process_inbox.py` | The flow: pending emails -> Claude -> drafts. Depends on an `Inbox` protocol, not on Gmail |
+| `main.py` | FastAPI: `/emails`, `/gmail-webhook`, `/renew-watch` |
+
+Dependencies point inwards: the flow receives the inbox and the Claude function as parameters, so the tests run it with fakes, and the endpoints get the inbox through FastAPI's `Depends` (swapped with `dependency_overrides` in the tests). The token check is a route dependency, so a request with a wrong token never reaches Gmail.
+
 ## Profiles
 
 Each profile has its own system prompt and tools, and is chosen with `--profile`. A new use case is a new entry in `profiles.py`, without touching the drafting code.
@@ -164,9 +179,10 @@ uv run pytest
 | `tests/test_errors.py` | Claude API errors: 503 when retryable, 500 when not, failed emails can be retried |
 | `tests/test_classification.py` | Intent/urgency: the model and the JSON schema accept the same values |
 | `tests/test_tools.py` | Database tools: someone else's order, SQL injection, unknown tool |
-| `tests/test_gmail_helpers.py` | HTML-only emails, quoted replies, thread context, drafts left out |
+| `tests/test_gmail_parsing.py` | HTML-only emails, quoted replies, thread context, newer-draft rule |
+| `tests/test_process_inbox.py` | The processing flow with a fake inbox: every email gets its draft, a Claude error only skips that email |
 | `tests/test_prompts.py` | Prompts keep the `<email>` block, `ALERT:` and the tool names |
-| `tests/test_webhook.py` | Webhook and watch renewal: wrong/missing token, 204 + background processing, errors don't crash it |
+| `tests/test_webhook.py` | Webhook and watch renewal: a wrong token never reaches Gmail, 204 + background processing, token hidden in logs |
 
 ## Evals
 

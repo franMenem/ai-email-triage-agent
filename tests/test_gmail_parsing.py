@@ -1,8 +1,8 @@
-"""Gmail parsing helpers: HTML-only emails, quoted replies, thread context. No API calls."""
+"""Gmail parsing (gmail_parsing.py): HTML-only emails, quoted replies, thread context. No API calls."""
 
 import base64
 
-from gmail_client import extract_text, format_thread, has_newer_draft, html_to_text, strip_quoted
+from gmail_parsing import extract_text, format_thread, has_newer_draft, html_to_text, strip_quoted
 
 
 def b64(text):

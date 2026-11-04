@@ -29,11 +29,11 @@ import secrets
 from datetime import datetime
 
 import anthropic
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 
 from drafter import draft_reply
-from gmail_client import connect, start_watch
+from gmail_client import GmailInbox
 from models import Email
 from process_inbox import process_new_emails
 
@@ -87,8 +87,11 @@ async def receive(email: Email):
             raise HTTPException(status_code=500, detail="The service is not available right now")
 
 
-def check_token(token: str):
-    """Only callers that know WEBHOOK_TOKEN (Pub/Sub and the daily renewal) get in."""
+def require_token(token: str = ""):
+    """Only callers that know WEBHOOK_TOKEN (Pub/Sub and the daily renewal) get in.
+
+    Used as a route dependency, so it runs before anything else: a request with a
+    wrong token never reaches Gmail."""
     expected = os.environ.get("WEBHOOK_TOKEN")
     if not expected:
         # Fail closed: without a configured token, nobody gets in
@@ -116,20 +119,29 @@ class PubSubPush(BaseModel):
 processing_lock = asyncio.Lock()
 
 
-async def process_in_background():
+def get_inbox_factory():
+    """How to open the Gmail inbox, as a FastAPI dependency. It's a factory (not the
+    inbox itself) so the login happens only when it's needed, and the tests swap it
+    for a fake one with app.dependency_overrides."""
+    return GmailInbox.connect
+
+
+async def process_in_background(inbox_factory):
     profile = os.environ.get("AGENT_PROFILE", "freelance")
     async with processing_lock:
         try:
-            await process_new_emails(profile)
+            inbox = await asyncio.to_thread(inbox_factory)
+            await process_new_emails(profile, inbox)
         except Exception as e:
             # Pub/Sub already got its 2xx, so it won't retry: the email stays pending
             # (unread, labeled, no draft) and the next notification picks it up.
             print(f"Error processing the inbox: {e!r}")
 
 
-@app.post("/gmail-webhook", status_code=204)
-async def gmail_webhook(push: PubSubPush, background_tasks: BackgroundTasks, token: str = ""):
-    check_token(token)
+@app.post("/gmail-webhook", status_code=204, dependencies=[Depends(require_token)])
+async def gmail_webhook(
+    push: PubSubPush, background_tasks: BackgroundTasks, inbox_factory=Depends(get_inbox_factory)
+):
     # The notification doesn't include the email, only "something changed".
     # It's logged, and the inbox is checked the usual way: labeled, unread, no draft.
     try:
@@ -138,13 +150,13 @@ async def gmail_webhook(push: PubSubPush, background_tasks: BackgroundTasks, tok
     except (ValueError, TypeError):
         print(f"Pub/Sub message {push.message.messageId} without readable data")
     # Pub/Sub expects an answer within seconds; Claude can take longer, so the
-    # work runs after the response is sent
-    background_tasks.add_task(process_in_background)
+    # work runs after the response is sent. It connects to Gmail there too, so
+    # the 204 doesn't wait for the login.
+    background_tasks.add_task(process_in_background, inbox_factory)
 
 
-@app.post("/renew-watch")
-def renew_watch(token: str = ""):
-    check_token(token)
-    response = start_watch(connect())
+@app.post("/renew-watch", dependencies=[Depends(require_token)])
+def renew_watch(inbox_factory=Depends(get_inbox_factory)):
+    response = inbox_factory().start_watch()
     expires = datetime.fromtimestamp(int(response["expiration"]) / 1000)
     return {"status": "watch renewed", "expires": expires.isoformat(timespec="minutes")}

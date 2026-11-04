@@ -2,8 +2,8 @@
 Intent and urgency classification. Run them with:
     uv run pytest   (doesn't call the API: it's free)
 
-The allowed values live in two places that must match: `Draft` in models.py
-(what Python accepts) and DRAFT_SCHEMA in drafter.py (what Claude may answer).
+The allowed values live only in `Draft` (models.py); DRAFT_SCHEMA in drafter.py,
+what Claude may answer, is generated from it. These tests pin both down.
 """
 
 from fastapi.testclient import TestClient
