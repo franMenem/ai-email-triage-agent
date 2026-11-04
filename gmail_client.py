@@ -3,7 +3,8 @@ Gmail client: read the emails with the agent label and leave drafts.
 
 `connect()` is Google's standard login (OAuth). The first time it opens the
 browser to grant access; then it saves token.json and doesn't ask again.
-credentials.json and token.json are in .gitignore.
+credentials.json and token.json are in .gitignore. On a server, the token
+comes from the GMAIL_TOKEN_JSON environment variable instead.
 
 Permissions (SCOPES): read emails and create drafts. This file NEVER has a
 function that sends email: a person reviews every draft and sends it.
@@ -12,6 +13,8 @@ Run it with: uv run python gmail_client.py   (doesn't call the Claude API)
 """
 
 import base64
+import json
+import os
 import re
 import sys
 from datetime import datetime
@@ -46,6 +49,15 @@ TOKEN_PATH = BASE_DIR / "token.json"
 
 def connect():
     """Returns a Gmail API client authenticated with your account."""
+    # On a server there is no browser and no token.json: the token comes from the
+    # GMAIL_TOKEN_JSON environment variable (the contents of your local token.json).
+    # The refresh token inside it renews the access token in memory.
+    if token_json := os.environ.get("GMAIL_TOKEN_JSON"):
+        creds = Credentials.from_authorized_user_info(json.loads(token_json), SCOPES)
+        if not creds.valid:
+            creds.refresh(Request())
+        return build("gmail", "v1", credentials=creds)
+
     creds = None
     if TOKEN_PATH.exists():
         creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), SCOPES)

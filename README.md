@@ -134,6 +134,20 @@ There is also a FastAPI endpoint (`POST /emails`) that drafts a reply for an ema
 uv run --env-file .env fastapi dev main.py   # http://127.0.0.1:8000/docs
 ```
 
+## Real time with a webhook
+
+Instead of checking every few minutes, Gmail can push a notification as soon as a labeled email arrives:
+
+```
+email gets the "agente" label ──> Gmail watch ──> Pub/Sub topic ──> push ──> POST /gmail-webhook ──> drafts
+                                                                    (answers 204 at once, works in the background)
+```
+
+- `uv run python gmail_client.py --watch` starts the Gmail watch (`start_watch`). It lasts 7 days; `POST /renew-watch` renews it and should be called once a day.
+- `POST /gmail-webhook` answers Pub/Sub right away and runs the same processing as `process_inbox.py` in the background. A lock keeps two notifications from processing at the same time, and duplicated notifications are harmless because threads with a draft are skipped.
+- Both endpoints are public URLs, so they require `?token=<WEBHOOK_TOKEN>` and refuse everything if it isn't configured. (A stricter option is Pub/Sub's OIDC authentication, verifying Google's signed token.)
+- On a server, the Gmail login comes from the `GMAIL_TOKEN_JSON` environment variable instead of `token.json`.
+
 ## Tests
 
 The tests replace the LLM call with a fake, so they are free, fast and don't need internet. They run on every push with GitHub Actions.
@@ -150,6 +164,7 @@ uv run pytest
 | `tests/test_tools.py` | Database tools: someone else's order, SQL injection, unknown tool |
 | `tests/test_gmail_helpers.py` | HTML-only emails, quoted replies, thread context, drafts left out |
 | `tests/test_prompts.py` | Prompts keep the `<email>` block, `ALERT:` and the tool names |
+| `tests/test_webhook.py` | Webhook and watch renewal: wrong/missing token, 204 + background processing, errors don't crash it |
 
 ## Evals
 
@@ -188,6 +203,7 @@ Python 3.12 · Anthropic SDK (Claude, tool calling, structured outputs) · Gmail
 - [x] Reads the whole thread; HTML-only emails; no state file (threads with a draft are skipped)
 - [x] Evals across models; Haiku chosen as default
 - [x] pytest + GitHub Actions
-- [ ] Deploy: Gmail push notifications (`watch` + Pub/Sub) to a webhook on FastAPI Cloud
+- [x] Gmail push notifications (`watch` + Pub/Sub) to a webhook
+- [ ] Deploy on FastAPI Cloud, with a daily watch renewal
 - [ ] LLM judge for draft quality, and tracing
 - [ ] Documents/FAQ search (RAG) for questions that aren't in a table

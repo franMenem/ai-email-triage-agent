@@ -23,7 +23,7 @@ from gmail_client import connect, create_draft, list_pending, read_email
 from profiles import PROFILES
 
 
-async def main(profile):
+async def process_new_emails(profile):
     service = connect()
     # Only emails whose thread has no draft yet: no state file needed (see list_pending)
     new_ids = list_pending(service)
@@ -46,10 +46,10 @@ async def main(profile):
 
 
 async def watch(profile, minutes):
-    """Runs main() forever, pausing `minutes` between rounds."""
+    """Runs process_new_emails() forever, pausing `minutes` between rounds."""
     while True:
         try:
-            await main(profile)
+            await process_new_emails(profile)
         except Exception as e:
             # Here any error is caught (e.g. the internet went down and Gmail failed):
             # the process must stay alive and retry on the next round.
@@ -66,4 +66,4 @@ if __name__ == "__main__":
     if args.every:
         asyncio.run(watch(args.profile, args.every))
     else:
-        asyncio.run(main(args.profile))
+        asyncio.run(process_new_emails(args.profile))
