@@ -1,6 +1,6 @@
 """
 Endpoint tests: valid email, missing field, duplicate. Run them with:
-    uv run python test_main.py
+    uv run pytest
 
 They DON'T call the real Claude API: `draft_reply` is replaced by a fake
 that always returns the same draft and records who called it.
@@ -70,9 +70,3 @@ def test_duplicate_does_not_call_llm_again():
     assert second.json() == {"status": "duplicate", "message_id": "abc-3"}
     assert calls.count("abc-3") == 1, "A duplicate must not spend another call"
 
-
-if __name__ == "__main__":
-    test_valid_email_is_received()
-    test_missing_field_returns_422_and_skips_llm()
-    test_duplicate_does_not_call_llm_again()
-    print("Endpoint tests OK")

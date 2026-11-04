@@ -8,6 +8,7 @@ class Email(BaseModel):
     sender: str
     subject: str
     body: str
+    thread: str = ""  # earlier messages of the same thread, oldest first ("" if it's the first)
 
 
 class Draft(BaseModel):

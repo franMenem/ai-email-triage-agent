@@ -15,8 +15,6 @@ To keep it running and check the inbox every N minutes (Ctrl+C stops it):
 
 import argparse
 import asyncio
-import json
-from pathlib import Path
 
 import anthropic
 
@@ -24,25 +22,11 @@ from drafter import draft_reply
 from gmail_client import connect, create_draft, list_pending, read_email
 from profiles import PROFILES
 
-# IDs already processed, so the same email never gets two drafts
-# (the email stays unread until you open it, so the search keeps returning it)
-PROCESSED_PATH = Path(__file__).parent / "processed.json"
-
-
-def load_processed():
-    if PROCESSED_PATH.exists():
-        return set(json.loads(PROCESSED_PATH.read_text()))
-    return set()
-
-
-def save_processed(processed):
-    PROCESSED_PATH.write_text(json.dumps(sorted(processed), indent=1))
-
 
 async def main(profile):
     service = connect()
-    processed = load_processed()
-    new_ids = [i for i in list_pending(service) if i not in processed]
+    # Only emails whose thread has no draft yet: no state file needed (see list_pending)
+    new_ids = list_pending(service)
     print(f"Profile: {profile} | New emails to process: {len(new_ids)}")
 
     for message_id in new_ids:
@@ -51,13 +35,11 @@ async def main(profile):
         try:
             draft = await draft_reply(mail, profile)
         except anthropic.APIError as e:
-            # Not marked as processed: the next run retries it
+            # No draft is created, so the next run retries it
             print(f"  Claude API error, will retry: {e}")
             continue
 
         create_draft(service, message_id, draft.draft)
-        processed.add(message_id)
-        save_processed(processed)
         print(f"  Intent: {draft.intent} | Urgency: {draft.urgency}")
         print(f"  Internal notes: {draft.internal_notes}")
         print("  ✅ Draft created in Gmail")

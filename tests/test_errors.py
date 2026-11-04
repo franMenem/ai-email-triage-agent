@@ -1,6 +1,6 @@
 """
 What happens when the Claude API fails. Run them with:
-    uv run python test_errors.py
+    uv run pytest
 
 - Temporary errors (no connection, 429 rate limit, 5xx) -> 503: retry later.
 - Permanent errors (e.g. 401 invalid API key) -> 500: something must be fixed.
@@ -94,10 +94,3 @@ def test_invalid_api_key_returns_500_and_can_retry():
     retry = client.post("/emails", json=mail("err-4"))
     assert retry.json()["status"] == "received"
 
-
-if __name__ == "__main__":
-    test_no_connection_returns_503_and_can_retry()
-    test_rate_limit_returns_503()
-    test_anthropic_server_error_returns_503()
-    test_invalid_api_key_returns_500_and_can_retry()
-    print("Error handling tests OK")

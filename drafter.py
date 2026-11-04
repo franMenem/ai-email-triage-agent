@@ -14,6 +14,9 @@ from tools import run_tool
 
 # Created once per module; the API key comes from ANTHROPIC_API_KEY
 client = anthropic.AsyncAnthropic()
+# Default model, chosen with the evals (see "Evals" in README.md): same scores as Opus and
+# Sonnet on every case, and the cheapest and fastest. The evals can pass another one.
+MODEL = "claude-haiku-5-5"
 
 DRAFT_SCHEMA = {
     "type": "object",
@@ -37,12 +40,12 @@ DRAFT_SCHEMA = {
 }
 
 
-async def call_claude(messages, profile: Profile):
+async def call_claude(messages, profile: Profile, model: str):
     # The API doesn't accept tools=[]: if the profile has no tools, the parameter is left out
     extra = {"tools": profile.tools} if profile.tools else {}
     return await client.messages.create(
         max_tokens=16000,
-        model="claude-opus-5-5",
+        model=model,
         system=profile.prompt,
         messages=messages,
         output_config={
@@ -55,8 +58,13 @@ async def call_claude(messages, profile: Profile):
     )
 
 
-async def draft_reply(email: Email, profile: str = "store") -> Draft:
+async def draft_reply(email: Email, profile: str = "store", model: str = MODEL) -> Draft:
     profile = PROFILES[profile]
+    thread = (
+        f"Earlier messages in this thread (oldest first):\n{email.thread}\n---\n"
+        if email.thread
+        else ""
+    )
     messages = [
         {
             "role": "user",
@@ -64,12 +72,13 @@ async def draft_reply(email: Email, profile: str = "store") -> Draft:
                 f"<email>\n"
                 f"Sender: {email.sender}\n"
                 f"Subject: {email.subject}\n"
-                f"Body: {email.body}\n"
+                f"{thread}"
+                f"Body (the new message to reply to): {email.body}\n"
                 f"</email>"
             ),
         }
     ]
-    response = await call_claude(messages, profile)
+    response = await call_claude(messages, profile, model)
 
     while response.stop_reason == "tool_use":
         tool_results = []
@@ -87,7 +96,7 @@ async def draft_reply(email: Email, profile: str = "store") -> Draft:
             {"role": "assistant", "content": response.content},
             {"role": "user", "content": tool_results},
         ]
-        response = await call_claude(messages, profile)
+        response = await call_claude(messages, profile, model)
 
     return Draft.model_validate_json(
         next(block for block in response.content if block.type == "text").text

@@ -9,7 +9,7 @@ Security rule: permissions are decided here, in code. For example, the email
 sender is set by the code, not by Claude, so nobody can get someone else's
 data even if they trick the model.
 
-Run it with: uv run python tools.py   (doesn't call the API: it's free)
+Tested in tests/test_tools.py (no API calls).
 """
 
 import json
@@ -99,29 +99,3 @@ def run_tool(name, tool_input, email):
         return f"The tool {name} does not exist."
     return EXECUTORS[name](tool_input, email)
 
-
-if __name__ == "__main__":
-    from models import Email
-
-    order = find_order("1002", "customer@example.com")
-    assert order is not None
-    assert order["product"] == "Running sneakers"
-    assert order["status"] == "in_transit"
-    assert find_order(1002, "customer@example.com") == order, "Must work with int and str"
-    assert find_order("9999", "customer@example.com") is None
-    assert find_order("1003", "customer@example.com") is None, (
-        "Must not return someone else's order"
-    )
-    assert find_order("1002' OR '1'='1", "customer@example.com") is None, (
-        "A SQL injection attempt must not return data"
-    )
-
-    assert "30 days" in find_policy("returns")
-    assert find_policy("made_up") is None
-
-    mail = Email(message_id="t", sender="customer@example.com", subject="", body="")
-    assert "sneakers" in run_tool("find_order", {"order_id": "1002"}, mail)
-    assert "No order" in run_tool("find_order", {"order_id": "1003"}, mail)
-    assert "free on orders" in run_tool("find_policy", {"topic": "shipping"}, mail)
-    assert "does not exist" in run_tool("delete_everything", {}, mail)
-    print("Database tools OK")

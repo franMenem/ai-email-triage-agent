@@ -1,6 +1,6 @@
 """
 Intent and urgency classification. Run them with:
-    uv run python test_classification.py   (doesn't call the API: it's free)
+    uv run pytest   (doesn't call the API: it's free)
 
 The allowed values live in two places that must match: `Draft` in models.py
 (what Python accepts) and DRAFT_SCHEMA in drafter.py (what Claude may answer).
@@ -60,10 +60,3 @@ def test_endpoint_returns_the_classification():
     assert data["intent"] == "return_request"
     assert data["urgency"] == "medium"
 
-
-if __name__ == "__main__":
-    test_draft_accepts_valid_values()
-    test_draft_rejects_made_up_values()
-    test_schema_matches_the_model()
-    test_endpoint_returns_the_classification()
-    print("Classification tests OK")
