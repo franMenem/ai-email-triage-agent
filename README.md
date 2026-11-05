@@ -269,3 +269,8 @@ Python 3.12 · Anthropic SDK (Claude, tool calling, structured outputs) · Gmail
 - [x] Outlook / Microsoft 365 and IMAP mailboxes, chosen with `MAIL_PROVIDER`
 - [ ] LLM judge for draft quality, and tracing
 - [ ] Documents/FAQ search (RAG) for questions that aren't in a table
+- [ ] Ready-made profiles per industry: law firms, accountants, online courses, sales teams
+- [ ] Small web page to review, edit and approve drafts before they go to Gmail
+- [ ] Attachments: read PDFs and images that come with an email
+- [ ] Calendar tool so meeting requests get real available slots
+- [ ] Onboarding for a second inbox without touching code (per-user OAuth and settings)
