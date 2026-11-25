@@ -10,7 +10,7 @@ Works with **Gmail / Google Workspace, Outlook / Microsoft 365, and any IMAP mai
 > - **In production:** deployed on FastAPI Cloud with Gmail push notifications; I use it every day with my own clients.
 > - **LLM engineering:** tool calling against a database, structured outputs (Pydantic), whole-thread context, 3 mail providers behind one interface.
 > - **RAG, measured:** FAQ search over embeddings as a tool, with the similarity threshold chosen from a labeled set of queries, not by feel: the right document comes back for 19 of 22 answerable questions.
-> - **Evals, not vibes:** 22 cases (normal, angry, multilingual, prompt-injection attacks) run across Opus, Sonnet and Haiku; all pass 22/22, so Haiku is the default for cost and speed.
+> - **Evals, not vibes:** 31 cases (normal, angry, multilingual, FAQ questions, prompt-injection attacks). Haiku, the default for cost and speed, passes 31/31.
 > - **Security by design:** a human approves every draft, the code cannot send email, authorization lives in code (not in the prompt), tested against prompt injection and SQL injection.
 > - **Tested:** pytest with fakes for the LLM and every mailbox, running in GitHub Actions on each push.
 
@@ -291,22 +291,25 @@ uv run pytest
 
 ## Evals
 
-The tests check the code; the evals check **the model's answers**. `evals/cases.json` has 22 test emails, each with what a good answer looks like:
+The tests check the code; the evals check **the model's answers**. `evals/cases.json` has 31 test emails, each with what a good answer looks like:
 
 - normal questions (order status, returns, shipping, payments), in English and Spanish;
 - angry customers, a double charge with a legal threat, a production outage;
 - attacks: prompt injection, a hidden instruction in a P.S., a fake employee, a prompt-leak request, phishing;
-- conversations: a reply that only makes sense with the earlier messages of the thread.
+- conversations: a reply that only makes sense with the earlier messages of the thread;
+- FAQ search: questions answered from a document, one mixed with an order, one that no document answers, one where the search returns the wrong documents and the answer is in a policy, and an attempt to dump every document.
 
 Each draft is scored on four checks: intent, urgency, `ALERT:` when (and only when) it's an attack, and content (text it must include, like the order data or a `[fill in: ...]` gap, and text it must never include, like another customer's order or the tool names).
 
 | Model | Intent | Urgency | Alert | Content | All checks | Avg time |
 |---|---|---|---|---|---|---|
-| Claude Opus 5.5 | 22/22 | 22/22 | 22/22 | 22/22 | 22/22 | 5.6 s |
-| Claude Sonnet 5.5 | 22/22 | 22/22 | 22/22 | 22/22 | 22/22 | 4.5 s |
-| **Claude Haiku 5.5** (default) | 22/22 | 22/22 | 22/22 | 22/22 | 22/22 | 3.6 s |
+| **Claude Haiku 5.5** (default), all 31 cases | 31/31 | 31/31 | 31/31 | 31/31 | 31/31 | 5.9 s |
+| Claude Sonnet 5.5, first 22 cases | 22/22 | 22/22 | 22/22 | 22/22 | 22/22 | 4.5 s |
+| Claude Opus 5.5, first 22 cases | 22/22 | 22/22 | 22/22 | 22/22 | 22/22 | 5.6 s |
 
-All three models pass every case, so the default is the cheapest and fastest one. In an earlier run of 20 cases, Sonnet once wrote `ALERT:` in the middle of the notes instead of at the start; that format slip is exactly what the evals are for. The detailed answers of each model are in `evals/results/`.
+All three models passed the first 22 cases, so the default is the cheapest and fastest one; the 9 FAQ-search cases were added later and have only been run with Haiku. Its average time went up from 3.6 s because the run now loads the embedding model.
+
+In the FAQ cases the internal notes show the layers working. Asked about motorcycle parts, the search returned the wholesale document; the notes say *"It does not answer whether motorcycle parts are sold, so no product availability was confirmed"* and the draft says the team will look into it. Asked about installments, Claude went to `find_policy` instead of the FAQ. In an earlier run of 20 cases, Sonnet once wrote `ALERT:` in the middle of the notes instead of at the start; that format slip is exactly what the evals are for. The detailed answers of each model are in `evals/results/`.
 
 Compare a model with `--model claude-sonnet-5-5`. Next steps: harder cases, and an LLM judge for tone and faithfulness, since the current checks don't score how good a draft reads.
 
