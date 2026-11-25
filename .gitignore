@@ -8,6 +8,7 @@ __pycache__/
 # Gmail OAuth credentials: never commit
 credentials.json
 token.json
+token.json.*
 
 # Sample database: generated automatically from data/orders.csv and db.py
 data/*.db
