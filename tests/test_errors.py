@@ -93,4 +93,3 @@ def test_invalid_api_key_returns_500_and_can_retry():
     main.draft_reply = fake_ok
     retry = client.post("/emails", json=mail("err-4"))
     assert retry.json()["status"] == "received"
-

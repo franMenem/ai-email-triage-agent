@@ -33,7 +33,9 @@ def find_order(order_id, email):
 def find_policy(topic):
     """Returns the text of a store policy, or None if it doesn't exist."""
     with closing(connect_db()) as con:  # closes the connection on exit
-        row = con.execute("SELECT text FROM policies WHERE topic = ?", (topic,)).fetchone()
+        row = con.execute(
+            "SELECT text FROM policies WHERE topic = ?", (topic,)
+        ).fetchone()
     return row["text"] if row else None
 
 
@@ -67,7 +69,13 @@ TOOL_FIND_POLICY = {
         "properties": {
             "topic": {
                 "type": "string",
-                "enum": ["returns", "exchanges", "shipping", "payment_methods", "warranty"],
+                "enum": [
+                    "returns",
+                    "exchanges",
+                    "shipping",
+                    "payment_methods",
+                    "warranty",
+                ],
             }
         },
         "required": ["topic"],
@@ -98,4 +106,3 @@ def run_tool(name, tool_input, email):
     if name not in EXECUTORS:
         return f"The tool {name} does not exist."
     return EXECUTORS[name](tool_input, email)
-

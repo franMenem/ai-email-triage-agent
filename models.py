@@ -8,7 +8,9 @@ class Email(BaseModel):
     sender: str
     subject: str
     body: str
-    thread: str = ""  # earlier messages of the same thread, oldest first ("" if it's the first)
+    thread: str = (
+        ""  # earlier messages of the same thread, oldest first ("" if it's the first)
+    )
 
 
 # What Claude must answer. drafter.py builds the JSON schema for Claude's structured
@@ -20,5 +22,7 @@ class Draft(BaseModel):
 
     draft: str  # the reply, ready to send
     internal_notes: str  # what Claude wants the reviewer to know
-    intent: Literal["order_status", "return_request", "complaint", "general_inquiry", "other"]
+    intent: Literal[
+        "order_status", "return_request", "complaint", "general_inquiry", "other"
+    ]
     urgency: Literal["high", "medium", "low"]

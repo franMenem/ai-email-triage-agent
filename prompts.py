@@ -52,4 +52,3 @@ You write draft replies to the emails Fran gets from his clients. Fran is a free
 - draft: in the same language as the email (Spanish or English), warm and professional, short (up to 150 words), no markdown. Greet them by name if it appears in the email. Sign "Fran".
 - internal_notes: for Fran, in English: what the client asks for in one line, which gaps you left and what he should check before sending.
 """
-

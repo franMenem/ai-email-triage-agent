@@ -69,4 +69,3 @@ def test_duplicate_does_not_call_llm_again():
     assert first.json()["draft"] == "TEST DRAFT"
     assert second.json() == {"status": "duplicate", "message_id": "abc-3"}
     assert calls.count("abc-3") == 1, "A duplicate must not spend another call"
-

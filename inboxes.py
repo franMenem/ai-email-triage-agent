@@ -38,7 +38,9 @@ def open_inbox():
 if __name__ == "__main__":
     inbox = open_inbox()
     ids = inbox.list_pending()
-    print(f"{os.environ.get('MAIL_PROVIDER', 'gmail')}: emails that still need a reply: {ids}")
+    print(
+        f"{os.environ.get('MAIL_PROVIDER', 'gmail')}: emails that still need a reply: {ids}"
+    )
     for message_id in ids:
         mail = inbox.read_email(message_id)
         print(f"- From: {mail.sender} | Subject: {mail.subject} | {mail.body[:80]!r}")

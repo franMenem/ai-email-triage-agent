@@ -10,7 +10,9 @@ def test_find_order_returns_the_senders_order():
     order = find_order("1002", "customer@example.com")
     assert order["product"] == "Running sneakers"
     assert order["status"] == "in_transit"
-    assert find_order(1002, "customer@example.com") == order, "Must work with int and str"
+    assert find_order(1002, "customer@example.com") == order, (
+        "Must work with int and str"
+    )
 
 
 def test_find_order_never_returns_someone_elses_order():

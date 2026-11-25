@@ -75,7 +75,9 @@ async def watch(profile, minutes):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--profile", choices=PROFILES, default="freelance")
-    parser.add_argument("--every", type=int, help="minutes between checks; without it, runs once")
+    parser.add_argument(
+        "--every", type=int, help="minutes between checks; without it, runs once"
+    )
     args = parser.parse_args()
     if args.every:
         asyncio.run(watch(args.profile, args.every))

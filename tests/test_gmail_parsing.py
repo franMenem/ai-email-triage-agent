@@ -16,7 +16,10 @@ def message(msg_id, sender, body):
         "payload": {
             "mimeType": "text/plain",
             "body": {"data": b64(body)},
-            "headers": [{"name": "From", "value": sender}, {"name": "Date", "value": "Mon, 2 Nov 2026"}],
+            "headers": [
+                {"name": "From", "value": sender},
+                {"name": "Date", "value": "Mon, 2 Nov 2026"},
+            ],
         },
     }
 
@@ -34,7 +37,10 @@ def test_extract_text_prefers_plain_text():
 
 def test_extract_text_falls_back_to_html():
     html = "<html><style>p {color: red}</style><body><p>Hi Fran,</p><p>Can we talk?</p></body></html>"
-    payload = {"mimeType": "multipart/alternative", "parts": [{"mimeType": "text/html", "body": {"data": b64(html)}}]}
+    payload = {
+        "mimeType": "multipart/alternative",
+        "parts": [{"mimeType": "text/html", "body": {"data": b64(html)}}],
+    }
     text = extract_text(payload)
     assert "Hi Fran," in text and "Can we talk?" in text
     assert "color" not in text, "CSS must not end up in the text"
@@ -72,7 +78,11 @@ def test_format_thread_is_empty_for_a_first_message():
 def test_format_thread_ignores_drafts():
     draft = message("2", "Fran <f@x.com>", "Unsent draft text")
     draft["labelIds"] = ["DRAFT"]
-    messages = [message("1", "Mark <k@x.com>", "Can we meet?"), draft, message("3", "Mark <k@x.com>", "Hello?")]
+    messages = [
+        message("1", "Mark <k@x.com>", "Can we meet?"),
+        draft,
+        message("3", "Mark <k@x.com>", "Hello?"),
+    ]
     assert "Unsent draft text" not in format_thread(messages, current_id="3")
 
 
@@ -95,7 +105,9 @@ def test_an_older_draft_does_not_hide_a_new_email():
 
 
 def test_no_draft_means_pending():
-    assert not has_newer_draft([{"id": "1", "internalDate": "1000", "labelIds": ["INBOX"]}], "1")
+    assert not has_newer_draft(
+        [{"id": "1", "internalDate": "1000", "labelIds": ["INBOX"]}], "1"
+    )
 
 
 def msg(msg_id, date, *labels):
@@ -108,7 +120,11 @@ def test_a_read_email_still_needs_a_reply():
 
 
 def test_the_latest_client_email_is_the_one_to_answer():
-    thread = [msg("1", 1000, "INBOX"), msg("2", 2000, "SENT"), msg("3", 3000, "INBOX", "UNREAD")]
+    thread = [
+        msg("1", 1000, "INBOX"),
+        msg("2", 2000, "SENT"),
+        msg("3", 3000, "INBOX", "UNREAD"),
+    ]
     assert email_to_answer(thread) == "3"
 
 

@@ -40,7 +40,9 @@ async def call_claude(messages, profile: Profile, model: str):
     )
 
 
-async def draft_reply(email: Email, profile: str = "store", model: str = MODEL) -> Draft:
+async def draft_reply(
+    email: Email, profile: str = "store", model: str = MODEL
+) -> Draft:
     profile = PROFILES[profile]
     thread = (
         f"Earlier messages in this thread (oldest first):\n{email.thread}\n---\n"

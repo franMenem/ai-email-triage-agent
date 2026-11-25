@@ -19,11 +19,26 @@ DB_PATH = DATA_DIR / "store.db"
 
 # Sample data: policies of a fictional online store
 POLICIES = [
-    ("returns", "Returns are accepted up to 30 days after delivery, with the product unused and in its box. The refund goes back to the original payment method within 10 business days after we receive the product."),
-    ("exchanges", "Size or color exchanges are free within 30 days of delivery, subject to stock. The customer sends the product back and we ship the new one once we receive it."),
-    ("shipping", "Orders ship within 1 to 2 business days. Delivery takes 2 to 5 business days in the metro area and 4 to 8 elsewhere. Shipping is free on orders over $100."),
-    ("payment_methods", "Credit and debit cards, bank transfer and Mercado Pago. Credit cards allow up to 3 interest-free installments."),
-    ("warranty", "All products have a 3-month warranty against manufacturing defects. It does not cover normal wear or damage from misuse."),
+    (
+        "returns",
+        "Returns are accepted up to 30 days after delivery, with the product unused and in its box. The refund goes back to the original payment method within 10 business days after we receive the product.",
+    ),
+    (
+        "exchanges",
+        "Size or color exchanges are free within 30 days of delivery, subject to stock. The customer sends the product back and we ship the new one once we receive it.",
+    ),
+    (
+        "shipping",
+        "Orders ship within 1 to 2 business days. Delivery takes 2 to 5 business days in the metro area and 4 to 8 elsewhere. Shipping is free on orders over $100.",
+    ),
+    (
+        "payment_methods",
+        "Credit and debit cards, bank transfer and Mercado Pago. Credit cards allow up to 3 interest-free installments.",
+    ),
+    (
+        "warranty",
+        "All products have a 3-month warranty against manufacturing defects. It does not cover normal wear or damage from misuse.",
+    ),
 ]
 
 

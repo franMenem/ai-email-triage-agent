@@ -48,7 +48,10 @@ def extract_text(payload):
 
 def get_headers(message):
     """Turns the header list [{"name": ..., "value": ...}] into a dict (lowercase names)."""
-    return {h["name"].lower(): h["value"] for h in message.get("payload", {}).get("headers", [])}
+    return {
+        h["name"].lower(): h["value"]
+        for h in message.get("payload", {}).get("headers", [])
+    }
 
 
 def to_thread_messages(messages):
@@ -77,12 +80,16 @@ def format_thread(messages, current_id):
     """Earlier messages of the thread (oldest first), as text for Claude."""
     # Drafts also show up as thread messages: they're not part of the conversation
     earlier = [
-        m for m in messages if m["id"] != current_id and "DRAFT" not in m.get("labelIds", [])
+        m
+        for m in messages
+        if m["id"] != current_id and "DRAFT" not in m.get("labelIds", [])
     ]
     entries = []
     for m in earlier:
         h = get_headers(m)
-        entries.append((h.get("from", ""), h.get("date", ""), extract_text(m["payload"])))
+        entries.append(
+            (h.get("from", ""), h.get("date", ""), extract_text(m["payload"]))
+        )
     return format_thread_text(entries)
 
 

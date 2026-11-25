@@ -57,7 +57,9 @@ def _msal_app():
         cache.deserialize(saved)
     elif TOKEN_PATH.exists():
         cache.deserialize(TOKEN_PATH.read_text())
-    app = msal.PublicClientApplication(os.environ["MS_CLIENT_ID"], authority=AUTHORITY, token_cache=cache)
+    app = msal.PublicClientApplication(
+        os.environ["MS_CLIENT_ID"], authority=AUTHORITY, token_cache=cache
+    )
     return app, cache
 
 
@@ -70,7 +72,9 @@ def login():
     if "access_token" not in result:
         raise RuntimeError(result.get("error_description", "Login failed"))
     TOKEN_PATH.write_text(cache.serialize())
-    print(f"Logged in. Saved {TOKEN_PATH.name} (on a server: its contents go in MS_TOKEN_CACHE)")
+    print(
+        f"Logged in. Saved {TOKEN_PATH.name} (on a server: its contents go in MS_TOKEN_CACHE)"
+    )
 
 
 def access_token():
@@ -78,7 +82,9 @@ def access_token():
     accounts = app.get_accounts()
     result = app.acquire_token_silent(SCOPES, account=accounts[0]) if accounts else None
     if not result or "access_token" not in result:
-        raise RuntimeError("No valid Microsoft login: run `python outlook_client.py --login`")
+        raise RuntimeError(
+            "No valid Microsoft login: run `python outlook_client.py --login`"
+        )
     return result["access_token"]
 
 
@@ -88,7 +94,9 @@ def to_thread_messages(messages, me):
     for m in messages:
         # A draft's date is when it was last edited; a received/sent email's, when it arrived
         when = m["lastModifiedDateTime"] if m.get("isDraft") else m["receivedDateTime"]
-        sender = (m.get("from") or {}).get("emailAddress", {}).get("address", "").lower()
+        sender = (
+            (m.get("from") or {}).get("emailAddress", {}).get("address", "").lower()
+        )
         out.append(
             ThreadMessage(
                 id=m["id"],
@@ -102,9 +110,13 @@ def to_thread_messages(messages, me):
 
 def graph_headers(message):
     """Graph's internetMessageHeaders -> dict with lowercase names (for looks_automated)."""
-    headers = {h["name"].lower(): h["value"] for h in message.get("internetMessageHeaders", [])}
+    headers = {
+        h["name"].lower(): h["value"] for h in message.get("internetMessageHeaders", [])
+    }
     sender = (message.get("from") or {}).get("emailAddress", {})
-    headers.setdefault("from", f"{sender.get('name', '')} <{sender.get('address', '')}>")
+    headers.setdefault(
+        "from", f"{sender.get('name', '')} <{sender.get('address', '')}>"
+    )
     return headers
 
 
@@ -113,13 +125,17 @@ class OutlookInbox:
         self._http = http
         self._filter = filter_value
         self._me = self._get("/me")
-        self._me_address = (self._me.get("mail") or self._me.get("userPrincipalName", "")).lower()
+        self._me_address = (
+            self._me.get("mail") or self._me.get("userPrincipalName", "")
+        ).lower()
         self._conversations = {}  # message id -> its conversation (filled by list_pending)
 
     @classmethod
     def connect(cls):
         http = httpx.Client(
-            base_url=GRAPH, headers={"Authorization": f"Bearer {access_token()}"}, timeout=30
+            base_url=GRAPH,
+            headers={"Authorization": f"Bearer {access_token()}"},
+            timeout=30,
         )
         return cls(http, os.environ.get("AGENT_FILTER", "agente"))
 
@@ -130,16 +146,20 @@ class OutlookInbox:
 
     def _recent_ids(self):
         """Conversation IDs of the recent emails the agent handles."""
-        since = (datetime.now(timezone.utc) - timedelta(days=PENDING_MAX_DAYS)).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        )
+        since = (
+            datetime.now(timezone.utc) - timedelta(days=PENDING_MAX_DAYS)
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
         if self._filter == ALL_MAIL:
             path = "/me/mailFolders/inbox/messages"
-            query = f"receivedDateTime ge {since} and inferenceClassification eq 'focused'"
+            query = (
+                f"receivedDateTime ge {since} and inferenceClassification eq 'focused'"
+            )
         else:
             path = "/me/messages"
             query = f"receivedDateTime ge {since} and categories/any(c:c eq '{self._filter}')"
-        data = self._get(path, params={"$filter": query, "$select": "conversationId", "$top": "100"})
+        data = self._get(
+            path, params={"$filter": query, "$select": "conversationId", "$top": "100"}
+        )
         return {m["conversationId"] for m in data.get("value", [])}
 
     def list_pending(self):
@@ -160,7 +180,10 @@ class OutlookInbox:
             if not message_id:
                 continue
             if self._filter == ALL_MAIL:
-                full = self._get(f"/me/messages/{message_id}", params={"$select": "from,internetMessageHeaders"})
+                full = self._get(
+                    f"/me/messages/{message_id}",
+                    params={"$select": "from,internetMessageHeaders"},
+                )
                 if looks_automated(graph_headers(full)):
                     continue
             pending.append(message_id)
@@ -169,7 +192,9 @@ class OutlookInbox:
     def _message(self, message_id):
         return self._get(
             f"/me/messages/{message_id}",
-            params={"$select": "subject,from,receivedDateTime,uniqueBody,body,conversationId"},
+            params={
+                "$select": "subject,from,receivedDateTime,uniqueBody,body,conversationId"
+            },
             headers=TEXT_BODY,
         )
 
@@ -187,7 +212,13 @@ class OutlookInbox:
             full = self._message(m["id"])
             sender = full["from"]["emailAddress"]
             text = (full.get("uniqueBody") or full["body"])["content"]
-            thread.append((f"{sender.get('name', '')} <{sender['address']}>", full["receivedDateTime"], text))
+            thread.append(
+                (
+                    f"{sender.get('name', '')} <{sender['address']}>",
+                    full["receivedDateTime"],
+                    text,
+                )
+            )
         body = (message.get("uniqueBody") or message["body"])["content"]
         return Email(
             message_id=message_id,
@@ -199,7 +230,9 @@ class OutlookInbox:
 
     def create_draft(self, message_id, text):
         """createReply leaves the draft in the same conversation, quoting the original."""
-        response = self._http.post(f"/me/messages/{message_id}/createReply", json={"comment": text})
+        response = self._http.post(
+            f"/me/messages/{message_id}/createReply", json={"comment": text}
+        )
         response.raise_for_status()
         return response.json()
 
@@ -210,13 +243,18 @@ class OutlookInbox:
         sends back as clientState in every notification. Returns the expiry.
         """
         url = os.environ["PUBLIC_URL"].rstrip("/") + "/outlook-webhook"
-        expires = (datetime.now(timezone.utc) + timedelta(days=SUBSCRIPTION_DAYS)).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        )
-        existing = [s for s in self._get("/subscriptions").get("value", []) if s["notificationUrl"] == url]
+        expires = (
+            datetime.now(timezone.utc) + timedelta(days=SUBSCRIPTION_DAYS)
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        existing = [
+            s
+            for s in self._get("/subscriptions").get("value", [])
+            if s["notificationUrl"] == url
+        ]
         if existing:
             response = self._http.patch(
-                f"/subscriptions/{existing[0]['id']}", json={"expirationDateTime": expires}
+                f"/subscriptions/{existing[0]['id']}",
+                json={"expirationDateTime": expires},
             )
         else:
             response = self._http.post(
@@ -230,7 +268,9 @@ class OutlookInbox:
                 },
             )
         response.raise_for_status()
-        return datetime.fromisoformat(response.json()["expirationDateTime"].replace("Z", "+00:00"))
+        return datetime.fromisoformat(
+            response.json()["expirationDateTime"].replace("Z", "+00:00")
+        )
 
 
 if __name__ == "__main__":

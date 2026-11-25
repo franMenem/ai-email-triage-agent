@@ -85,13 +85,19 @@ async def receive(email: Email):
                 "message_id": email.message_id,
             }
     except anthropic.APIConnectionError:
-        raise HTTPException(status_code=503, detail="Claude API is unreachable, try again later")
+        raise HTTPException(
+            status_code=503, detail="Claude API is unreachable, try again later"
+        )
     except anthropic.APIStatusError as e:
         # 429 and 5xx are temporary: worth retrying later. The rest needs a fix.
         if e.status_code == 429 or e.status_code >= 500:
-            raise HTTPException(status_code=503, detail="Claude API is busy, try again later")
+            raise HTTPException(
+                status_code=503, detail="Claude API is busy, try again later"
+            )
         else:
-            raise HTTPException(status_code=500, detail="The service is not available right now")
+            raise HTTPException(
+                status_code=500, detail="The service is not available right now"
+            )
 
 
 def require_token(token: str = ""):
@@ -147,7 +153,9 @@ async def process_in_background(inbox_factory):
 
 @app.post("/gmail-webhook", status_code=204, dependencies=[Depends(require_token)])
 async def gmail_webhook(
-    push: PubSubPush, background_tasks: BackgroundTasks, inbox_factory=Depends(get_inbox_factory)
+    push: PubSubPush,
+    background_tasks: BackgroundTasks,
+    inbox_factory=Depends(get_inbox_factory),
 ):
     # The notification doesn't include the email, only "something changed".
     # It's logged, and the inbox is checked the usual way: labeled, not answered, no draft.
@@ -183,7 +191,8 @@ async def outlook_webhook(
         raise HTTPException(status_code=503, detail="WEBHOOK_TOKEN is not configured")
     notifications = (await request.json()).get("value", [])
     if not notifications or not all(
-        secrets.compare_digest(n.get("clientState") or "", expected) for n in notifications
+        secrets.compare_digest(n.get("clientState") or "", expected)
+        for n in notifications
     ):
         raise HTTPException(status_code=403, detail="Invalid clientState")
     background_tasks.add_task(process_in_background, inbox_factory)
@@ -191,7 +200,9 @@ async def outlook_webhook(
 
 
 @app.post("/process", status_code=202, dependencies=[Depends(require_token)])
-async def process_now(background_tasks: BackgroundTasks, inbox_factory=Depends(get_inbox_factory)):
+async def process_now(
+    background_tasks: BackgroundTasks, inbox_factory=Depends(get_inbox_factory)
+):
     """Checks the mailbox now. For providers without push notifications (IMAP):
     any scheduler can call it every few minutes (see the README)."""
     background_tasks.add_task(process_in_background, inbox_factory)
@@ -202,7 +213,8 @@ def renew_watch(inbox_factory=Depends(get_inbox_factory)):
     inbox = inbox_factory()
     if not hasattr(inbox, "start_watch"):
         raise HTTPException(
-            status_code=400, detail="This mail provider has no push notifications: use POST /process"
+            status_code=400,
+            detail="This mail provider has no push notifications: use POST /process",
         )
     expires = inbox.start_watch()
     return {"status": "watch renewed", "expires": expires.isoformat(timespec="minutes")}

@@ -43,12 +43,19 @@ def fake_gmail(monkeypatch):
 
 
 def push_body(history_id="123"):
-    data = base64.b64encode(json.dumps({"emailAddress": "me@x.com", "historyId": history_id}).encode())
-    return {"message": {"data": data.decode(), "messageId": "m-1"}, "subscription": "projects/p/subscriptions/s"}
+    data = base64.b64encode(
+        json.dumps({"emailAddress": "me@x.com", "historyId": history_id}).encode()
+    )
+    return {
+        "message": {"data": data.decode(), "messageId": "m-1"},
+        "subscription": "projects/p/subscriptions/s",
+    }
 
 
 def test_wrong_or_missing_token_is_rejected_before_touching_gmail(fake_gmail):
-    assert client.post("/gmail-webhook?token=wrong", json=push_body()).status_code == 403
+    assert (
+        client.post("/gmail-webhook?token=wrong", json=push_body()).status_code == 403
+    )
     assert client.post("/gmail-webhook", json=push_body()).status_code == 403
     assert client.post("/renew-watch?token=wrong").status_code == 403
     assert fake_gmail == [], "A request with a wrong token must never open Gmail"
@@ -69,7 +76,9 @@ def test_webhook_answers_204_and_processes_the_inbox(monkeypatch, fake_gmail):
     monkeypatch.setattr(main, "process_new_emails", fake_process)
     response = client.post(f"/gmail-webhook?token={TOKEN}", json=push_body())
     assert response.status_code == 204
-    assert calls == [("store", "FakeInbox")], "Processed once, with AGENT_PROFILE and the injected inbox"
+    assert calls == [("store", "FakeInbox")], (
+        "Processed once, with AGENT_PROFILE and the injected inbox"
+    )
 
 
 def test_webhook_survives_a_processing_error(monkeypatch):
@@ -77,7 +86,10 @@ def test_webhook_survives_a_processing_error(monkeypatch):
         raise RuntimeError("Gmail is down")
 
     monkeypatch.setattr(main, "process_new_emails", failing_process)
-    assert client.post(f"/gmail-webhook?token={TOKEN}", json=push_body()).status_code == 204
+    assert (
+        client.post(f"/gmail-webhook?token={TOKEN}", json=push_body()).status_code
+        == 204
+    )
 
 
 def test_webhook_accepts_a_message_without_data(monkeypatch):
@@ -97,8 +109,13 @@ def test_renew_watch():
 
 def test_access_logs_hide_the_token():
     record = logging.LogRecord(
-        "uvicorn.access", logging.INFO, "", 0, '%s - "%s %s HTTP/%s" %d',
-        ("1.2.3.4:0", "POST", "/gmail-webhook?token=secret123&x=1", "1.1", 204), None,
+        "uvicorn.access",
+        logging.INFO,
+        "",
+        0,
+        '%s - "%s %s HTTP/%s" %d',
+        ("1.2.3.4:0", "POST", "/gmail-webhook?token=secret123&x=1", "1.1", 204),
+        None,
     )
     main.HideTokenInAccessLogs().filter(record)
     line = record.getMessage()
@@ -141,7 +158,9 @@ def test_outlook_webhook_checks_client_state(monkeypatch, fake_gmail):
     monkeypatch.setattr(main, "process_new_emails", fake_process)
     bad = {"value": [{"clientState": "wrong", "resource": "me/messages/1"}]}
     assert client.post("/outlook-webhook", json=bad).status_code == 403
-    assert fake_gmail == [], "A notification with a wrong clientState never opens the mailbox"
+    assert fake_gmail == [], (
+        "A notification with a wrong clientState never opens the mailbox"
+    )
     good = {"value": [{"clientState": TOKEN, "resource": "me/messages/1"}]}
     assert client.post("/outlook-webhook", json=good).status_code == 202
     assert len(calls) == 1

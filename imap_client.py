@@ -57,7 +57,14 @@ PRESETS = {
     "mailcom": ("imap.mail.com", 993, False),
     "proton": ("127.0.0.1", 1143, True),  # Proton Mail Bridge running on your computer
 }
-SENT_NAMES = ["Sent", "Sent Messages", "Sent Items", "Sent Mail", "Enviados", "Gesendet"]
+SENT_NAMES = [
+    "Sent",
+    "Sent Messages",
+    "Sent Items",
+    "Sent Mail",
+    "Enviados",
+    "Gesendet",
+]
 DRAFT_NAMES = ["Drafts", "Draft", "Borradores", "Entwürfe"]
 
 HEADER_FIELDS = (
@@ -81,7 +88,10 @@ class ImapRecord:
         """Message-IDs that tie this message to its conversation."""
         found = re.findall(
             r"<[^>]+>",
-            " ".join(self.headers.get(k, "") for k in ("message-id", "in-reply-to", "references")),
+            " ".join(
+                self.headers.get(k, "")
+                for k in ("message-id", "in-reply-to", "references")
+            ),
         )
         return set(found)
 
@@ -159,7 +169,9 @@ class ImapInbox:
         else:
             con = imaplib.IMAP4_SSL(host, port)
         con.login(os.environ["IMAP_USER"], os.environ["IMAP_PASSWORD"])
-        return cls(con, os.environ["IMAP_USER"], os.environ.get("AGENT_FILTER", "agente"))
+        return cls(
+            con, os.environ["IMAP_USER"], os.environ.get("AGENT_FILTER", "agente")
+        )
 
     def _special_folders(self):
         """Finds the Sent and Drafts folders: by their standard flags (\\Sent, \\Drafts)
@@ -177,7 +189,9 @@ class ImapInbox:
                     by_flag[flag] = name
 
         def pick(flag, candidates):
-            return by_flag.get(flag) or next((n for n in candidates if n in names), candidates[0])
+            return by_flag.get(flag) or next(
+                (n for n in candidates if n in names), candidates[0]
+            )
 
         return pick(b"\\Sent", SENT_NAMES), pick(b"\\Drafts", DRAFT_NAMES)
 
@@ -224,7 +238,9 @@ class ImapInbox:
             if not any(r.role == "watched" for r in group):
                 continue
             ref = email_to_answer([self._to_thread_message(r) for r in group])
-            if ref and not (self._all_mail and looks_automated(self._records[ref].headers)):
+            if ref and not (
+                self._all_mail and looks_automated(self._records[ref].headers)
+            ):
                 pending.append(ref)
         return pending
 
@@ -239,11 +255,19 @@ class ImapInbox:
             self.list_pending()
         record = self._records[message_id]
         earlier = sorted(
-            (r for r in self._groups[message_id] if r.role != "draft" and r.ref != message_id),
+            (
+                r
+                for r in self._groups[message_id]
+                if r.role != "draft" and r.ref != message_id
+            ),
             key=lambda r: r.date,
         )
         thread = [
-            (r.headers.get("from", ""), r.headers.get("date", ""), body_text(self._fetch_full(r.ref)))
+            (
+                r.headers.get("from", ""),
+                r.headers.get("date", ""),
+                body_text(self._fetch_full(r.ref)),
+            )
             for r in earlier
         ]
         _, sender = parseaddr(record.headers.get("from", ""))
@@ -264,14 +288,18 @@ class ImapInbox:
         reply["Date"] = formatdate(localtime=True)
         reply["Message-ID"] = make_msgid()
         now = imaplib.Time2Internaldate(time.time())
-        status, detail = self._con.append(f'"{self._drafts}"', r"(\Draft)", now, reply.as_bytes())
+        status, detail = self._con.append(
+            f'"{self._drafts}"', r"(\Draft)", now, reply.as_bytes()
+        )
         if status != "OK":
             raise RuntimeError(f"Could not save the draft in {self._drafts}: {detail}")
 
 
 if __name__ == "__main__":
     inbox = ImapInbox.connect()
-    print(f"Watching '{inbox._watched}' | Sent: '{inbox._sent}' | Drafts: '{inbox._drafts}'")
+    print(
+        f"Watching '{inbox._watched}' | Sent: '{inbox._sent}' | Drafts: '{inbox._drafts}'"
+    )
     ids = inbox.list_pending()
     print("Emails that still need a reply:", ids)
     for ref in ids:

@@ -26,7 +26,9 @@ def test_draft_accepts_valid_values():
 def test_draft_rejects_made_up_values():
     try:
         Draft(draft="x", internal_notes="y", intent="grievance", urgency="high")
-        assert False, "intent='grievance' doesn't exist: it should raise ValidationError"
+        assert False, (
+            "intent='grievance' doesn't exist: it should raise ValidationError"
+        )
     except ValidationError:
         pass
     try:
@@ -47,7 +49,9 @@ def test_schema_matches_the_model():
 
 def test_endpoint_returns_the_classification():
     async def fake_draft_reply(email):
-        return Draft(draft="D", internal_notes="N", intent="return_request", urgency="medium")
+        return Draft(
+            draft="D", internal_notes="N", intent="return_request", urgency="medium"
+        )
 
     main.draft_reply = fake_draft_reply
     mail = {
@@ -59,4 +63,3 @@ def test_endpoint_returns_the_classification():
     data = TestClient(main.app).post("/emails", json=mail).json()
     assert data["intent"] == "return_request"
     assert data["urgency"] == "medium"
-

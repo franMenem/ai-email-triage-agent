@@ -28,7 +28,13 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
-from gmail_parsing import build_reply, email_to_answer, extract_text, format_thread, get_headers
+from gmail_parsing import (
+    build_reply,
+    email_to_answer,
+    extract_text,
+    format_thread,
+    get_headers,
+)
 from mail_core import ALL_MAIL, PENDING_MAX_DAYS, looks_automated, strip_quoted
 from models import Email
 
@@ -67,7 +73,9 @@ def connect():
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file(str(CREDENTIALS_PATH), SCOPES)
+            flow = InstalledAppFlow.from_client_secrets_file(
+                str(CREDENTIALS_PATH), SCOPES
+            )
             creds = flow.run_local_server(port=0)
         TOKEN_PATH.write_text(creds.to_json())
     return build("gmail", "v1", credentials=creds)
@@ -102,8 +110,15 @@ class GmailInbox:
         pending = []
         for t in threads:
             thread = self._threads.get(
-                userId="me", id=t["id"], format="metadata",
-                metadataHeaders=["From", "List-Unsubscribe", "Precedence", "Auto-Submitted"],
+                userId="me",
+                id=t["id"],
+                format="metadata",
+                metadataHeaders=[
+                    "From",
+                    "List-Unsubscribe",
+                    "Precedence",
+                    "Auto-Submitted",
+                ],
             ).execute()
             message_id = email_to_answer(thread["messages"])
             if not message_id:
@@ -117,8 +132,12 @@ class GmailInbox:
 
     def read_email(self, message_id):
         """Fetches a Gmail message, with its thread, as the `Email` the agent uses."""
-        message = self._messages.get(userId="me", id=message_id, format="full").execute()
-        thread = self._threads.get(userId="me", id=message["threadId"], format="full").execute()
+        message = self._messages.get(
+            userId="me", id=message_id, format="full"
+        ).execute()
+        thread = self._threads.get(
+            userId="me", id=message["threadId"], format="full"
+        ).execute()
         h = get_headers(message)
         _, address = parseaddr(h.get("from", ""))  # "Mark <k@x.com>" -> "k@x.com"
         return Email(
@@ -131,7 +150,9 @@ class GmailInbox:
 
     def create_draft(self, message_id, text):
         """Saves `text` as a draft reply, inside the original email's thread."""
-        original = self._messages.get(userId="me", id=message_id, format="metadata").execute()
+        original = self._messages.get(
+            userId="me", id=message_id, format="metadata"
+        ).execute()
         raw = build_reply(get_headers(original), text)
         body = {"message": {"raw": raw, "threadId": original["threadId"]}}
         return self._service.users().drafts().create(userId="me", body=body).execute()
@@ -151,7 +172,11 @@ class GmailInbox:
         again renews it). Returns the expiry.
         """
         label = "INBOX" if AGENT_LABEL == ALL_MAIL else self.label_id(AGENT_LABEL)
-        body = {"topicName": PUBSUB_TOPIC, "labelIds": [label], "labelFilterBehavior": "include"}
+        body = {
+            "topicName": PUBSUB_TOPIC,
+            "labelIds": [label],
+            "labelFilterBehavior": "include",
+        }
         response = self._service.users().watch(userId="me", body=body).execute()
         return datetime.fromtimestamp(int(response["expiration"]) / 1000)
 

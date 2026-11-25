@@ -78,7 +78,8 @@ def looks_automated(headers: dict[str, str]) -> bool:
     return (
         "list-unsubscribe" in headers  # newsletters and marketing
         or headers.get("precedence", "").lower() in ("bulk", "list", "junk")
-        or headers.get("auto-submitted", "no").lower() != "no"  # auto-replies, out of office
+        or headers.get("auto-submitted", "no").lower()
+        != "no"  # auto-replies, out of office
         or bool(_NO_REPLY.search(address))
     )
 
@@ -116,7 +117,9 @@ def html_to_text(html: str) -> str:
 # "On Mon, 3 Nov 2026, Mark <k@x.com> wrote:" / "El lun, 3 nov 2026, Mark escribió:"
 _QUOTE_HEADER = re.compile(r"^(On .+ wrote:|El .+ escribió:)\s*$", re.IGNORECASE)
 # Outlook's quote separator: "From: Mark <k@x.com>" right after a line of underscores or alone
-_OUTLOOK_QUOTE = re.compile(r"^(_{10,}|-{2,} ?Original Message ?-{2,}|From: .+@.+)$", re.IGNORECASE)
+_OUTLOOK_QUOTE = re.compile(
+    r"^(_{10,}|-{2,} ?Original Message ?-{2,}|From: .+@.+)$", re.IGNORECASE
+)
 
 
 def strip_quoted(text: str) -> str:
@@ -150,11 +153,17 @@ def build_reply_message(original_headers: dict[str, str], text: str) -> EmailMes
     subject = h.get("subject", "")
     reply = EmailMessage()
     reply["To"] = h.get("reply-to") or h.get("from", "")
-    reply["Subject"] = subject if subject.lower().startswith("re:") else f"Re: {subject}"
+    reply["Subject"] = (
+        subject if subject.lower().startswith("re:") else f"Re: {subject}"
+    )
     # These headers make email clients show it as a reply in the same conversation
     if "message-id" in h:
         reply["In-Reply-To"] = h["message-id"]
-        references = f"{h['references']} {h['message-id']}" if h.get("references") else h["message-id"]
+        references = (
+            f"{h['references']} {h['message-id']}"
+            if h.get("references")
+            else h["message-id"]
+        )
         reply["References"] = references
     reply.set_content(text)
     return reply

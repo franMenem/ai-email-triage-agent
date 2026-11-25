@@ -42,12 +42,20 @@ class FakeIMAP:
         self.folders[folder].append((uid, date, raw))
 
     def list(self):
-        flags = {"Sent Messages": r"\HasNoChildren \Sent", "Drafts": r"\HasNoChildren \Drafts"}
-        return "OK", [f'({flags.get(n, chr(92) + "HasNoChildren")}) "/" "{n}"'.encode() for n in self.folders]
+        flags = {
+            "Sent Messages": r"\HasNoChildren \Sent",
+            "Drafts": r"\HasNoChildren \Drafts",
+        }
+        return "OK", [
+            f'({flags.get(n, chr(92) + "HasNoChildren")}) "/" "{n}"'.encode()
+            for n in self.folders
+        ]
 
     def select(self, name, readonly=False):
         self.selected = name.strip('"')
-        return ("OK", [b"1"]) if self.selected in self.folders else ("NO", [b"no folder"])
+        return (
+            ("OK", [b"1"]) if self.selected in self.folders else ("NO", [b"no folder"])
+        )
 
     def uid(self, command, *args):
         messages = self.folders[self.selected]
@@ -58,8 +66,20 @@ class FakeIMAP:
         for uid, date, raw in messages:
             if uid in wanted:
                 internal = imaplib.Time2Internaldate(date).encode()
-                body = raw.split(b"\n\n")[0] + b"\n\n" if b"HEADER.FIELDS" in args[1].encode() else raw
-                response += [(f"{uid} (UID {uid} INTERNALDATE ".encode() + internal + b" BODY[] {1}", body), b")"]
+                body = (
+                    raw.split(b"\n\n")[0] + b"\n\n"
+                    if b"HEADER.FIELDS" in args[1].encode()
+                    else raw
+                )
+                response += [
+                    (
+                        f"{uid} (UID {uid} INTERNALDATE ".encode()
+                        + internal
+                        + b" BODY[] {1}",
+                        body,
+                    ),
+                    b")",
+                ]
         return "OK", response
 
     def append(self, folder, flags, date, raw):
@@ -79,22 +99,38 @@ def test_finds_sent_and_drafts_by_their_flags():
 def test_full_cycle_pending_draft_and_new_message():
     server = new_server()
     now = time.time()
-    server.add("agente", make_email("<a1@x>", "Mark <mark@x.com>", "Report", "Can we meet Tuesday?"), now - 300)
+    server.add(
+        "agente",
+        make_email("<a1@x>", "Mark <mark@x.com>", "Report", "Can we meet Tuesday?"),
+        now - 300,
+    )
 
     inbox = ImapInbox(server, ME, "agente")
     [ref] = inbox.list_pending()
     mail = inbox.read_email(ref)
-    assert (mail.sender, mail.subject, mail.body) == ("mark@x.com", "Report", "Can we meet Tuesday?")
+    assert (mail.sender, mail.subject, mail.body) == (
+        "mark@x.com",
+        "Report",
+        "Can we meet Tuesday?",
+    )
 
     inbox.create_draft(ref, "Tuesday works.")
     draft = server.folders["Drafts"][0][2]
     assert b"In-Reply-To: <a1@x>" in draft and b"Re: Report" in draft
-    assert ImapInbox(server, ME, "agente").list_pending() == [], "Already drafted: nothing to do"
+    assert ImapInbox(server, ME, "agente").list_pending() == [], (
+        "Already drafted: nothing to do"
+    )
 
     # The client writes again before the draft was sent: the new email gets its own reply
     server.add(
         "agente",
-        make_email("<a2@x>", "Mark <mark@x.com>", "Re: Report", "Or Thursday?", in_reply_to="<a1@x>"),
+        make_email(
+            "<a2@x>",
+            "Mark <mark@x.com>",
+            "Re: Report",
+            "Or Thursday?",
+            in_reply_to="<a1@x>",
+        ),
         time.time() + 60,
     )
     inbox = ImapInbox(server, ME, "agente")
@@ -105,18 +141,35 @@ def test_full_cycle_pending_draft_and_new_message():
 
 def test_nothing_pending_after_you_replied():
     server = new_server()
-    server.add("agente", make_email("<b1@x>", "Daniel <l@x.com>", "Hi", "Question"), time.time() - 600)
-    server.add("Sent Messages", make_email("<b2@x>", ME, "Re: Hi", "Answer", in_reply_to="<b1@x>"), time.time())
+    server.add(
+        "agente",
+        make_email("<b1@x>", "Daniel <l@x.com>", "Hi", "Question"),
+        time.time() - 600,
+    )
+    server.add(
+        "Sent Messages",
+        make_email("<b2@x>", ME, "Re: Hi", "Answer", in_reply_to="<b1@x>"),
+        time.time(),
+    )
     assert ImapInbox(server, ME, "agente").list_pending() == []
 
 
 def test_all_mail_mode_watches_inbox_and_skips_newsletters():
     server = new_server()
-    server.add("INBOX", make_email("<c1@x>", "Ana <ana@x.com>", "Hola", "¿Me ayudás?"), time.time())
     server.add(
         "INBOX",
-        make_email("<c2@x>", "News <news@shop.com>", "Ofertas", "50% off",
-                   extra={"List-Unsubscribe": "<mailto:u@shop.com>"}),
+        make_email("<c1@x>", "Ana <ana@x.com>", "Hola", "¿Me ayudás?"),
+        time.time(),
+    )
+    server.add(
+        "INBOX",
+        make_email(
+            "<c2@x>",
+            "News <news@shop.com>",
+            "Ofertas",
+            "50% off",
+            extra={"List-Unsubscribe": "<mailto:u@shop.com>"},
+        ),
         time.time(),
     )
     assert ImapInbox(server, ME, "*").list_pending() == ["INBOX|1"]
@@ -125,7 +178,9 @@ def test_all_mail_mode_watches_inbox_and_skips_newsletters():
 def test_conversations_are_grouped_by_threading_headers():
     r1 = ImapRecord("a|1", "watched", 1, {"message-id": "<1@x>"})
     r2 = ImapRecord("s|1", "sent", 2, {"message-id": "<2@x>", "in-reply-to": "<1@x>"})
-    r3 = ImapRecord("a|2", "watched", 3, {"message-id": "<3@x>", "references": "<1@x> <2@x>"})
+    r3 = ImapRecord(
+        "a|2", "watched", 3, {"message-id": "<3@x>", "references": "<1@x> <2@x>"}
+    )
     other = ImapRecord("a|3", "watched", 4, {"message-id": "<9@x>"})
     groups = sorted(group_conversations([r1, r2, r3, other]), key=len)
     assert [len(g) for g in groups] == [1, 3]
@@ -140,5 +195,7 @@ def test_imap_dates_use_english_month_names():
 def test_automated_senders_in_spanish_and_english():
     assert looks_automated({"from": "Banco <noresponder@banco.com.ar>"})
     assert looks_automated({"from": "Portal <sin-respuesta@portal.com>"})
-    assert looks_automated({"from": "Shop <hi@shop.com>", "list-unsubscribe": "<mailto:x>"})
+    assert looks_automated(
+        {"from": "Shop <hi@shop.com>", "list-unsubscribe": "<mailto:x>"}
+    )
     assert not looks_automated({"from": "Mark <mark@x.com>"})

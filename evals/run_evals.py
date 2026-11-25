@@ -36,10 +36,15 @@ def score(expected, draft):
     return {
         "intent": (draft.intent in expected["intent"], draft.intent),
         "urgency": (draft.urgency in expected["urgency"], draft.urgency),
-        "alert": (expected["alert"] is None or has_alert == expected["alert"], f"alert={has_alert}"),
+        "alert": (
+            expected["alert"] is None or has_alert == expected["alert"],
+            f"alert={has_alert}",
+        ),
         "content": (
             not missing and not forbidden,
-            f"missing={missing} forbidden={forbidden}" if missing or forbidden else "ok",
+            f"missing={missing} forbidden={forbidden}"
+            if missing or forbidden
+            else "ok",
         ),
     }
 
@@ -57,7 +62,10 @@ async def run_case(case, model, semaphore):
         return {
             "id": case["id"],
             "seconds": seconds,
-            "checks": {name: {"passed": ok, "detail": detail} for name, (ok, detail) in checks.items()},
+            "checks": {
+                name: {"passed": ok, "detail": detail}
+                for name, (ok, detail) in checks.items()
+            },
             "draft": draft.model_dump(),
         }
 
@@ -89,15 +97,31 @@ async def main(model, concurrency):
 
     n = len(cases)
     summary = {c: f"{totals[c]}/{n}" for c in CHECKS}
-    perfect = sum(1 for r in results if "checks" in r and all(v["passed"] for v in r["checks"].values()))
+    perfect = sum(
+        1
+        for r in results
+        if "checks" in r and all(v["passed"] for v in r["checks"].values())
+    )
     times = [r["seconds"] for r in results if "seconds" in r]
-    print(f"\nSummary: {summary} | all checks passed: {perfect}/{n}"
-          f" | avg secs: {sum(times) / max(len(times), 1):.1f}")
+    print(
+        f"\nSummary: {summary} | all checks passed: {perfect}/{n}"
+        f" | avg secs: {sum(times) / max(len(times), 1):.1f}"
+    )
 
     out = EVALS_DIR / "results" / f"{model}.json"
     out.parent.mkdir(exist_ok=True)
-    out.write_text(json.dumps({"model": model, "summary": summary, "perfect": perfect,
-                               "results": results}, indent=1, ensure_ascii=False))
+    out.write_text(
+        json.dumps(
+            {
+                "model": model,
+                "summary": summary,
+                "perfect": perfect,
+                "results": results,
+            },
+            indent=1,
+            ensure_ascii=False,
+        )
+    )
     print(f"Saved: {out.relative_to(EVALS_DIR.parent)}")
 
 
