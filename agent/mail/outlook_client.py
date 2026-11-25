@@ -141,7 +141,7 @@ class OutlookInbox:
         self._me_address = (
             self._me.get("mail") or self._me.get("userPrincipalName", "")
         ).lower()
-        self._conversations = {}  # message id -> its conversation (filled by list_pending)
+        self._conversations = {}  # message id -> its conversation (a cache)
 
     @classmethod
     def connect(cls):
@@ -177,20 +177,25 @@ class OutlookInbox:
         # it; a set would give a different order on every run)
         return list(dict.fromkeys(m["conversationId"] for m in data.get("value", [])))
 
+    def _conversation(self, conversation_id):
+        """The messages of a conversation, remembered for read_email."""
+        data = self._get(
+            "/me/messages",
+            params={
+                "$filter": f"conversationId eq '{conversation_id}'",
+                "$select": "id,receivedDateTime,lastModifiedDateTime,isDraft,from,subject",
+            },
+        )
+        messages = data.get("value", [])
+        for m in messages:
+            self._conversations[m["id"]] = messages
+        return messages
+
     def list_pending(self):
         """IDs of the emails that still need a reply (see mail/core.py, email_to_answer)."""
         pending = []
         for conversation_id in self._recent_ids():
-            data = self._get(
-                "/me/messages",
-                params={
-                    "$filter": f"conversationId eq '{conversation_id}'",
-                    "$select": "id,receivedDateTime,lastModifiedDateTime,isDraft,from,subject",
-                },
-            )
-            messages = data.get("value", [])
-            for m in messages:
-                self._conversations[m["id"]] = messages
+            messages = self._conversation(conversation_id)
             message_id = email_to_answer(to_thread_messages(messages, self._me_address))
             if not message_id:
                 continue
@@ -217,7 +222,14 @@ class OutlookInbox:
         """The email and its conversation. uniqueBody is only the new text of each
         message (Outlook already removes the quoted part); body is the fallback."""
         message = self._message(message_id)
-        conversation = self._conversations.get(message_id, [])
+        conversation = self._conversations.get(message_id)
+        if conversation is None:
+            # list_pending wasn't called on this inbox (or didn't see this email):
+            # the conversation is fetched now, so the thread is never silently empty
+            conversation_id = message.get("conversationId")
+            conversation = (
+                self._conversation(conversation_id) if conversation_id else []
+            )
         earlier = sorted(
             (m for m in conversation if not m.get("isDraft") and m["id"] != message_id),
             key=lambda m: m["receivedDateTime"],

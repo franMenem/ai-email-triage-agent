@@ -601,3 +601,29 @@ def test_outlook_pending_emails_come_in_the_order_graph_listed_them():
     assert outlook(FakeGraph(messages)).list_pending() == expected, (
         "A set of conversation ids has no order: it changed from run to run"
     )
+
+
+# ----------------------- 10. Outlook: read_email on an inbox that didn't list
+def test_outlook_read_email_brings_the_thread_without_a_list_pending_before():
+    graph = FakeGraph(
+        [
+            omsg("m1", "2026-11-04T10:00:00Z", "mark@x.com"),
+            omsg("m2", "2026-11-04T10:30:00Z", ME),
+            omsg("d1", "2026-11-04T10:40:00Z", ME, draft=True),
+            omsg("m3", "2026-11-04T11:00:00Z", "mark@x.com"),
+            omsg("other", "2026-11-04T09:00:00Z", "ana@x.com", conversation="conv-2"),
+        ]
+    )
+    listed = outlook(graph)
+    assert listed.list_pending() == ["m3", "other"]
+    expected = listed.read_email("m3").thread
+    assert expected == (
+        "From: mark <mark@x.com>\nDate: 2026-11-04T10:00:00Z\ntext of m1\n---\n"
+        "From: fran <fran@outlook.com>\nDate: 2026-11-04T10:30:00Z\ntext of m2"
+    )
+
+    fresh = outlook(graph)  # e.g. another process, or the server after a restart
+    assert fresh.read_email("m3").thread == expected, (
+        "The thread must not depend on having called list_pending first"
+    )
+    assert fresh.read_email("other").thread == "", "A first email has no thread"
