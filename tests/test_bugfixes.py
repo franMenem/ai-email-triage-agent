@@ -10,6 +10,7 @@ import sys
 import types
 from types import SimpleNamespace as NS
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
@@ -18,6 +19,7 @@ import agent
 import main
 import process_inbox
 from agent import drafter
+from agent.mail.outlook_client import OutlookInbox, graph_headers
 from agent.models import Draft, Email
 from agent.tools import find_order, run_tool
 
@@ -453,3 +455,132 @@ def test_emails_endpoint_answers_500_when_claude_gives_no_draft(monkeypatch):
     assert client.post("/emails", json=body).json()["status"] == "received", (
         "A failed email is not marked as seen"
     )
+
+
+# ------------------------------------------------------------------ Outlook
+ME = "fran@outlook.com"
+
+
+def omsg(msg_id, when, sender, conversation="conv-1", draft=False, **fields):
+    """A message as Microsoft Graph returns it; `fields` overrides or adds keys."""
+    return {
+        "id": msg_id,
+        "conversationId": conversation,
+        "receivedDateTime": when,
+        "lastModifiedDateTime": when,
+        "isDraft": draft,
+        "from": {"emailAddress": {"name": sender.split("@")[0], "address": sender}},
+        "subject": "Report",
+        "uniqueBody": {"contentType": "text", "content": f"text of {msg_id}"},
+        "body": {"contentType": "text", "content": f"text of {msg_id} + quoted"},
+        **fields,
+    }
+
+
+class FakeGraph:
+    """A fake Microsoft Graph. With `page_size`, lists come in pages linked by
+    @odata.nextLink (an absolute URL that already carries the query), like the real one."""
+
+    def __init__(self, messages, page_size=None):
+        self.messages = {m["id"]: m for m in messages}
+        self.page_size = page_size
+        self.requests = []
+
+    def page(self, request, items):
+        if not self.page_size:
+            return httpx.Response(200, json={"value": items})
+        start = int(request.url.params.get("$skiptoken", 0))
+        body = {"value": items[start : start + self.page_size]}
+        if start + self.page_size < len(items):
+            params = request.url.params.set("$skiptoken", start + self.page_size)
+            body["@odata.nextLink"] = str(request.url.copy_with(params=params))
+        return httpx.Response(200, json=body)
+
+    def handler(self, request: httpx.Request):
+        path = request.url.path.removeprefix("/v1.0")
+        self.requests.append((request.method, path, dict(request.url.params)))
+        if path == "/me":
+            return httpx.Response(200, json={"mail": ME})
+        if path in ("/me/messages", "/me/mailFolders/inbox/messages"):
+            query = request.url.params.get("$filter", "")
+            if "conversationId eq" in query:
+                cid = query.split("'")[1]
+                found = [
+                    m for m in self.messages.values() if m["conversationId"] == cid
+                ]
+                return self.page(request, found)
+            return self.page(
+                request,
+                [
+                    {"conversationId": m["conversationId"]}
+                    for m in self.messages.values()
+                ],
+            )
+        if path.startswith("/me/messages/"):
+            return httpx.Response(200, json=self.messages[path.split("/")[3]])
+        return httpx.Response(404)
+
+
+def outlook(graph, filter_value="agente"):
+    http = httpx.Client(
+        base_url="https://graph.microsoft.com/v1.0",
+        transport=httpx.MockTransport(graph.handler),
+    )
+    return OutlookInbox(http, filter_value)
+
+
+# --------------------------------- 8. Outlook: null where a text was expected
+def test_outlook_email_with_a_null_subject_has_an_empty_subject():
+    graph = FakeGraph([omsg("m1", "2026-11-04T10:00:00Z", "mark@x.com", subject=None)])
+    inbox = outlook(graph)
+    assert inbox.list_pending() == ["m1"]
+    mail = inbox.read_email("m1")
+    assert (mail.subject, mail.sender, mail.body) == ("", "mark@x.com", "text of m1")
+
+
+def test_outlook_nulls_in_the_sender_and_the_bodies_become_empty_text():
+    no_name = {"emailAddress": {"name": None, "address": "mark@x.com"}}
+    graph = FakeGraph(
+        [
+            omsg("m1", "2026-11-04T10:00:00Z", "mark@x.com", **{"from": no_name}),
+            omsg("m2", "2026-11-04T10:10:00Z", ME, uniqueBody=None),
+            omsg("m3", "2026-11-04T10:20:00Z", "mark@x.com", **{"from": None}),
+            omsg(
+                "m4",
+                "2026-11-04T10:30:00Z",
+                "mark@x.com",
+                uniqueBody={"contentType": "text", "content": None},
+            ),
+            omsg(
+                "m5",
+                "2026-11-04T10:40:00Z",
+                "mark@x.com",
+                subject=None,
+                uniqueBody=None,
+                body=None,
+                **{"from": no_name},
+            ),
+        ]
+    )
+    inbox = outlook(graph)
+    assert inbox.list_pending() == ["m5"]
+    mail = inbox.read_email("m5")
+    assert (mail.sender, mail.subject, mail.body) == ("mark@x.com", "", "")
+    assert mail.thread == (
+        "From:  <mark@x.com>\nDate: 2026-11-04T10:00:00Z\ntext of m1\n---\n"
+        "From: fran <fran@outlook.com>\nDate: 2026-11-04T10:10:00Z\ntext of m2 + quoted\n---\n"
+        "From:  <>\nDate: 2026-11-04T10:20:00Z\ntext of m3\n---\n"
+        "From: mark <mark@x.com>\nDate: 2026-11-04T10:30:00Z\n"
+    ), "No 'None' as text, and no error"
+
+
+@pytest.mark.parametrize(
+    "sender",
+    [None, {}, {"emailAddress": None}, {"emailAddress": {"address": None}}],
+)
+def test_outlook_email_without_a_sender_address_has_an_empty_sender(sender):
+    message = omsg("m1", "2026-11-04T10:00:00Z", "x@x.com", **{"from": sender})
+    inbox = outlook(FakeGraph([message]))
+    assert inbox.list_pending() == ["m1"], "Not mine, so it still needs a reply"
+    assert inbox.read_email("m1").sender == "", "Like Gmail and IMAP without a From"
+    assert graph_headers({**message, "internetMessageHeaders": None})["from"] == " <>"

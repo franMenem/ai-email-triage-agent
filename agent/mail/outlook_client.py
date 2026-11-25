@@ -88,15 +88,29 @@ def access_token():
     return result["access_token"]
 
 
+def sender_of(message):
+    """(name, address) of who sent a Graph message, "" for what it doesn't have.
+
+    Graph sends null (not a missing key) for what a message lacks, e.g. "from": null
+    or "subject": null, so .get(key, default) is not enough: it returns the None.
+    """
+    address = (message.get("from") or {}).get("emailAddress") or {}
+    return address.get("name") or "", address.get("address") or ""
+
+
+def text_of(message):
+    """The text of a Graph message: only its new part (uniqueBody), or the whole body."""
+    body = message.get("uniqueBody") or message.get("body") or {}
+    return body.get("content") or ""
+
+
 def to_thread_messages(messages, me):
     """Graph messages of one conversation -> ThreadMessage."""
     out = []
     for m in messages:
         # A draft's date is when it was last edited; a received/sent email's, when it arrived
         when = m["lastModifiedDateTime"] if m.get("isDraft") else m["receivedDateTime"]
-        sender = (
-            (m.get("from") or {}).get("emailAddress", {}).get("address", "").lower()
-        )
+        sender = sender_of(m)[1].lower()
         out.append(
             ThreadMessage(
                 id=m["id"],
@@ -111,12 +125,11 @@ def to_thread_messages(messages, me):
 def graph_headers(message):
     """Graph's internetMessageHeaders -> dict with lowercase names (for looks_automated)."""
     headers = {
-        h["name"].lower(): h["value"] for h in message.get("internetMessageHeaders", [])
+        h["name"].lower(): h["value"]
+        for h in message.get("internetMessageHeaders") or []
     }
-    sender = (message.get("from") or {}).get("emailAddress", {})
-    headers.setdefault(
-        "from", f"{sender.get('name', '')} <{sender.get('address', '')}>"
-    )
+    name, address = sender_of(message)
+    headers.setdefault("from", f"{name} <{address}>")
     return headers
 
 
@@ -210,21 +223,15 @@ class OutlookInbox:
         thread = []
         for m in earlier:
             full = self._message(m["id"])
-            sender = full["from"]["emailAddress"]
-            text = (full.get("uniqueBody") or full["body"])["content"]
+            name, address = sender_of(full)
             thread.append(
-                (
-                    f"{sender.get('name', '')} <{sender['address']}>",
-                    full["receivedDateTime"],
-                    text,
-                )
+                (f"{name} <{address}>", full["receivedDateTime"], text_of(full))
             )
-        body = (message.get("uniqueBody") or message["body"])["content"]
         return Email(
             message_id=message_id,
-            sender=message["from"]["emailAddress"]["address"],
-            subject=message.get("subject", ""),
-            body=strip_quoted(body),
+            sender=sender_of(message)[1],
+            subject=message.get("subject") or "",
+            body=strip_quoted(text_of(message)),
             thread=format_thread(thread),
         )
 
