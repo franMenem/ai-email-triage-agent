@@ -148,7 +148,28 @@ EXECUTORS = {
 }
 
 
+# Tool name -> the inputs it can't run without, taken from its definition
+REQUIRED_INPUTS = {
+    tool["name"]: tool["input_schema"]["required"]
+    for tool in (TOOL_FIND_ORDER, TOOL_FIND_POLICY, TOOL_SEARCH_DOCS)
+}
+
+
 def run_tool(name, tool_input, email):
     if name not in EXECUTORS:
         return f"The tool {name} does not exist."
+    # The schema asks Claude for these inputs, but nothing forces it to send them.
+    # Without one, Claude gets an error it can fix (like for an unknown tool)
+    # instead of an exception that loses the whole draft. Only this case is turned
+    # into text: an error while the tool runs is a real failure and must be seen.
+    missing = [
+        key
+        for key in REQUIRED_INPUTS.get(name, [])
+        if not isinstance(tool_input, dict) or tool_input.get(key) is None
+    ]
+    if missing:
+        return (
+            f"The tool {name} was called without its required input "
+            f"({', '.join(missing)}), so it did not run. Call it again with it."
+        )
     return EXECUTORS[name](tool_input, email)

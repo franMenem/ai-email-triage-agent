@@ -3,12 +3,16 @@ One test (or a few) per bug found in the audit: each one failed before its fix.
 No network and no API calls: the same fakes as the rest of the suite.
 """
 
+import asyncio
 import base64
 import json
+import sys
+import types
 
 import pytest
 from fastapi.testclient import TestClient
 
+import agent
 import main
 from agent.models import Email
 from agent.tools import find_order, run_tool
@@ -181,3 +185,98 @@ def test_find_order_resists_sql_injection_through_both_fields(order_id, email):
     assert find_order(order_id, email) is None
     mail = Email(message_id="t", sender=email, subject="", body="")
     assert "No order" in run_tool("find_order", {"order_id": order_id}, mail)
+
+
+# ------------------------------------- 5. run_tool without the expected input
+MAIL = Email(
+    message_id="t",
+    sender="customer@example.com",
+    subject="Order 1002",
+    body="Where is my order 1002? This is the email body.",
+)
+
+
+@pytest.fixture
+def fake_rag(monkeypatch):
+    """Stands in for agent/rag.py (which needs the optional model) and records the queries."""
+    fake = types.ModuleType("agent.rag")
+    fake.FAQ_DOCS = {"hours": "Open 9 to 6."}
+    fake.calls = []
+
+    def search_docs(query, index, docs, **kwargs):
+        fake.calls.append(query)
+        return ["Open 9 to 6."]
+
+    fake.search_docs = search_docs
+    fake.faq_index = lambda: "THE INDEX"
+    monkeypatch.setitem(sys.modules, "agent.rag", fake)
+    monkeypatch.setattr(agent, "rag", fake, raising=False)
+    return fake
+
+
+@pytest.mark.parametrize(
+    "name, key",
+    [("find_order", "order_id"), ("find_policy", "topic"), ("search_docs", "query")],
+)
+@pytest.mark.parametrize(
+    "tool_input", [{}, {"other": "x"}, None, "1002", ["1002"], "null_value"]
+)
+def test_run_tool_explains_a_missing_input_to_claude_instead_of_crashing(
+    fake_rag, name, key, tool_input
+):
+    if tool_input == "null_value":
+        tool_input = {key: None}
+    answer = run_tool(name, tool_input, MAIL)
+    assert isinstance(answer, str)
+    assert name in answer and key in answer, "Claude must know what to send"
+    assert "sneakers" not in answer and "Open 9 to 6" not in answer
+    assert fake_rag.calls == [], (
+        "Nothing is searched without Claude's query: never the email body instead"
+    )
+
+
+def test_run_tool_still_runs_with_the_expected_input(fake_rag):
+    assert "sneakers" in run_tool("find_order", {"order_id": "1002"}, MAIL)
+    assert "sneakers" in run_tool("find_order", {"order_id": 1002}, MAIL)
+    assert "free on orders" in run_tool("find_policy", {"topic": "shipping"}, MAIL)
+    assert run_tool("search_docs", {"query": "hours?"}, MAIL) == "Open 9 to 6."
+    assert fake_rag.calls == ["hours?"]
+    assert "does not exist" in run_tool("delete_everything", {}, MAIL)
+
+
+def test_a_real_search_error_is_not_turned_into_a_missing_input_or_no_documents(
+    fake_rag, monkeypatch
+):
+    def not_installed(query, index, docs, **kwargs):
+        raise ModuleNotFoundError("No module named 'sentence_transformers'")
+
+    monkeypatch.setattr(fake_rag, "search_docs", not_installed)
+    with pytest.raises(ModuleNotFoundError):
+        run_tool("search_docs", {"query": "hours?"}, MAIL)
+
+
+def test_a_missing_tool_input_does_not_kill_the_draft(monkeypatch):
+    from types import SimpleNamespace as NS
+
+    from agent import drafter
+
+    final = json.dumps(
+        {"draft": "D", "internal_notes": "N", "intent": "other", "urgency": "low"}
+    )
+    responses = [
+        NS(
+            stop_reason="tool_use",
+            content=[NS(type="tool_use", id="tu1", name="find_order", input={})],
+        ),
+        NS(stop_reason="end_turn", content=[NS(type="text", text=final)]),
+    ]
+    requests = []
+
+    async def create(**kwargs):
+        requests.append(list(kwargs["messages"]))
+        return responses.pop(0)
+
+    monkeypatch.setattr(drafter, "client", NS(messages=NS(create=create)))
+    draft = asyncio.run(drafter.draft_reply(MAIL, "store"))
+    assert draft.draft == "D"
+    assert "order_id" in requests[1][2]["content"][0]["content"]
