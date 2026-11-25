@@ -11,10 +11,11 @@ import types
 
 import pytest
 
-import tools
-from models import Email
-from profiles import PROFILES
-from tools import TOOL_SEARCH_DOCS, run_tool
+import agent
+from agent import tools
+from agent.models import Email
+from agent.profiles import PROFILES
+from agent.tools import TOOL_SEARCH_DOCS, run_tool
 
 MAIL = Email(message_id="t", sender="customer@example.com", subject="", body="hi")
 NOTHING_FOUND = "No FAQ document answers that question."
@@ -23,7 +24,7 @@ NOTHING_FOUND = "No FAQ document answers that question."
 @pytest.fixture
 def fake_rag(monkeypatch):
     """A stand-in for rag.py that records how search_docs is called."""
-    fake = types.ModuleType("rag")
+    fake = types.ModuleType("agent.rag")
     fake.FAQ_DOCS = {"hours": "Open 9 to 6.", "gifts": "Gift cards last 12 months."}
     fake.results = []
     fake.calls = []
@@ -34,7 +35,10 @@ def fake_rag(monkeypatch):
 
     fake.search_docs = search_docs
     fake.faq_index = lambda: "THE INDEX"
-    monkeypatch.setitem(sys.modules, "rag", fake)
+    monkeypatch.setitem(sys.modules, "agent.rag", fake)
+    # `from agent import rag` looks at the package attribute before sys.modules, and
+    # the real module is already there when another test file imported it first.
+    monkeypatch.setattr(agent, "rag", fake, raising=False)
     return fake
 
 
@@ -177,8 +181,8 @@ def test_it_never_searches_with_the_email_body(fake_rag, tool_input):
 
 def test_importing_tools_and_profiles_does_not_import_rag_in_a_clean_process():
     code = (
-        "import sys, tools, profiles;"
-        "bad = [m for m in ('rag', 'sentence_transformers', 'torch') if m in sys.modules];"
+        "import sys, agent.tools, agent.profiles;"
+        "bad = [m for m in ('agent.rag', 'sentence_transformers', 'torch') if m in sys.modules];"
         "assert not bad, bad"
     )
     env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}

@@ -19,10 +19,10 @@ from typing import Protocol
 
 import anthropic
 
-from drafter import draft_reply
-from inboxes import open_inbox
-from models import Email
-from profiles import PROFILES
+from agent.drafter import draft_reply
+from agent.mail.inboxes import open_inbox
+from agent.models import Email
+from agent.profiles import PROFILES
 
 
 class Inbox(Protocol):

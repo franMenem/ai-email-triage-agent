@@ -1,7 +1,7 @@
 """Database tools: permissions in code, SQL injection, unknown tools. No API calls."""
 
-from models import Email
-from tools import find_order, find_policy, run_tool
+from agent.models import Email
+from agent.tools import find_order, find_policy, run_tool
 
 MAIL = Email(message_id="t", sender="customer@example.com", subject="", body="")
 

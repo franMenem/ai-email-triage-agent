@@ -8,8 +8,8 @@ import imaplib
 import time
 from email.message import EmailMessage
 
-from imap_client import ImapInbox, group_conversations, imap_date, ImapRecord
-from mail_core import looks_automated
+from agent.mail.core import looks_automated
+from agent.mail.imap_client import ImapInbox, ImapRecord, group_conversations, imap_date
 
 ME = "fran@icloud.com"
 

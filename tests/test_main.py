@@ -10,7 +10,7 @@ So the tests are free, fast and don't need internet.
 from fastapi.testclient import TestClient
 
 import main
-from models import Draft
+from agent.models import Draft
 
 calls = []
 

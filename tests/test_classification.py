@@ -10,8 +10,8 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 import main
-from drafter import DRAFT_SCHEMA
-from models import Draft
+from agent.drafter import DRAFT_SCHEMA
+from agent.models import Draft
 
 INTENTS = ["order_status", "return_request", "complaint", "general_inquiry", "other"]
 URGENCIES = ["high", "medium", "low"]

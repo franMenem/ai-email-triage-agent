@@ -25,7 +25,7 @@ from pathlib import Path
 
 # FAQ knowledge base: {doc_id: text}. Topics that are not in the policies table.
 FAQ_DOCS = json.loads(
-    (Path(__file__).parent / "data" / "faq.json").read_text(encoding="utf-8")
+    (Path(__file__).parents[1] / "data" / "faq.json").read_text(encoding="utf-8")
 )
 
 # Multilingual (the customers write in Spanish and English). 768-number vectors.

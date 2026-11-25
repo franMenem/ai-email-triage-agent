@@ -15,7 +15,7 @@ Tested in tests/test_tools.py (no API calls).
 import json
 from contextlib import closing
 
-from db import connect_db
+from agent.db import connect_db
 
 
 def find_order(order_id, email):
@@ -125,7 +125,7 @@ def _run_find_policy(tool_input, email):
 def _run_search_docs(tool_input, email):
     # Imported here, not at the top: the rest of the agent starts and runs without
     # the FAQ search, which needs the optional "rag" dependency group.
-    import rag
+    from agent import rag
 
     # k and the minimum score are not taken from Claude: search_docs uses the values
     # chosen in rag.py from measured scores.

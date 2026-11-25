@@ -34,7 +34,7 @@ from email.parser import BytesHeaderParser
 from email.policy import default as default_policy
 from email.utils import formatdate, make_msgid, parseaddr
 
-from mail_core import (
+from agent.mail.core import (
     ALL_MAIL,
     PENDING_MAX_DAYS,
     ThreadMessage,
@@ -45,7 +45,7 @@ from mail_core import (
     looks_automated,
     strip_quoted,
 )
-from models import Email
+from agent.models import Email
 
 # host, port, STARTTLS, and the folder names to try if the server doesn't mark them
 PRESETS = {
@@ -224,7 +224,7 @@ class ImapInbox:
         )
 
     def list_pending(self):
-        """Refs of the watched emails that still need a reply (see mail_core.email_to_answer)."""
+        """Refs of the watched emails that still need a reply (see mail/core.py, email_to_answer)."""
         records = (
             self._scan(self._watched, "watched")
             + self._scan(self._sent, "sent")

@@ -1,4 +1,4 @@
-"""Proposed tests: gmail_parsing.py, mail_core.py and gmail_client.py (fake Gmail service, no network)."""
+"""Proposed tests: gmail_parsing.py, mail/core.py and gmail_client.py (fake Gmail service, no network)."""
 
 import base64
 import email
@@ -6,11 +6,21 @@ from datetime import datetime
 
 import pytest
 
-import gmail_client
-from gmail_client import GmailInbox
-from gmail_parsing import build_reply, email_to_answer, extract_text, format_thread
-from mail_core import build_reply_message, html_to_text, looks_automated, strip_quoted
-from mail_core import format_thread as core_format_thread
+from agent.mail import gmail_client
+from agent.mail.core import (
+    build_reply_message,
+    html_to_text,
+    looks_automated,
+    strip_quoted,
+)
+from agent.mail.core import format_thread as core_format_thread
+from agent.mail.gmail_client import GmailInbox
+from agent.mail.gmail_parsing import (
+    build_reply,
+    email_to_answer,
+    extract_text,
+    format_thread,
+)
 
 
 def b64(text, encoding="utf-8"):
@@ -148,7 +158,7 @@ def test_build_reply_is_urlsafe_base64_of_a_threaded_reply():
     )
 
 
-# ---------- mail_core ----------
+# ---------- mail/core.py ----------
 
 
 @pytest.mark.parametrize(

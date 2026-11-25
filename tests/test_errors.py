@@ -15,7 +15,7 @@ import httpx
 from fastapi.testclient import TestClient
 
 import main
-from models import Draft
+from agent.models import Draft
 
 client = TestClient(main.app)
 

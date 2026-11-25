@@ -20,8 +20,8 @@ import json
 import time
 from pathlib import Path
 
-from drafter import MODEL, draft_reply
-from models import Email
+from agent.drafter import MODEL, draft_reply
+from agent.models import Email
 
 EVALS_DIR = Path(__file__).parent
 CHECKS = ["intent", "urgency", "alert", "content"]

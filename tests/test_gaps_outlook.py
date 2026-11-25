@@ -7,7 +7,7 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 import pytest
 
-from outlook_client import OutlookInbox, graph_headers, to_thread_messages
+from agent.mail.outlook_client import OutlookInbox, graph_headers, to_thread_messages
 
 ME = "fran@outlook.com"
 

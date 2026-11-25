@@ -14,7 +14,7 @@ import csv
 import sqlite3
 from pathlib import Path
 
-DATA_DIR = Path(__file__).parent / "data"
+DATA_DIR = Path(__file__).parents[1] / "data"
 DB_PATH = DATA_DIR / "store.db"
 
 # Sample data: policies of a fictional online store

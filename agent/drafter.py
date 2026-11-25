@@ -8,9 +8,9 @@ While Claude asks for tools, they run (tools.py) and the results go back to it.
 
 import anthropic
 
-from models import Draft, Email
-from profiles import PROFILES, Profile
-from tools import run_tool
+from agent.models import Draft, Email
+from agent.profiles import PROFILES, Profile
+from agent.tools import run_tool
 
 # Created once per module; the API key comes from ANTHROPIC_API_KEY
 client = anthropic.AsyncAnthropic()

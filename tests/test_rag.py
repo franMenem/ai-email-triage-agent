@@ -10,7 +10,7 @@ import math
 
 import pytest
 
-import rag
+from agent import rag
 
 # Hand-made vectors: the query points along [1, 0]; each doc's score against it
 # is easy to work out by eye.

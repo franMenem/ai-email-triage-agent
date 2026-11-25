@@ -6,8 +6,8 @@ To add a new use case, add a profile here; drafter.py doesn't change.
 
 from dataclasses import dataclass, field
 
-from prompts import FREELANCE_PROMPT, STORE_PROMPT
-from tools import TOOL_FIND_ORDER, TOOL_FIND_POLICY, TOOL_SEARCH_DOCS
+from agent.prompts import FREELANCE_PROMPT, STORE_PROMPT
+from agent.tools import TOOL_FIND_ORDER, TOOL_FIND_POLICY, TOOL_SEARCH_DOCS
 
 
 @dataclass(frozen=True)

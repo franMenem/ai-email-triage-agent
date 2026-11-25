@@ -9,7 +9,7 @@ All of them fulfill the Inbox protocol (process_inbox.py), so the rest of the ag
 doesn't change. Adding a provider = a new class with list_pending, read_email and
 create_draft (and start_watch if it has push notifications) + one line here.
 
-Run it with: uv run --env-file .env python inboxes.py   (lists what still needs a reply)
+Run it with: uv run --env-file .env python -m agent.mail.inboxes   (lists what still needs a reply)
 """
 
 import os
@@ -21,15 +21,15 @@ def open_inbox():
     """Connects to the configured mailbox. Imports lazily: each provider has its own libraries."""
     provider = os.environ.get("MAIL_PROVIDER", "gmail")
     if provider == "gmail":
-        from gmail_client import GmailInbox
+        from agent.mail.gmail_client import GmailInbox
 
         return GmailInbox.connect()
     if provider == "outlook":
-        from outlook_client import OutlookInbox
+        from agent.mail.outlook_client import OutlookInbox
 
         return OutlookInbox.connect()
     if provider == "imap":
-        from imap_client import ImapInbox
+        from agent.mail.imap_client import ImapInbox
 
         return ImapInbox.connect()
     raise ValueError(f"MAIL_PROVIDER must be one of {PROVIDERS}, not {provider!r}")

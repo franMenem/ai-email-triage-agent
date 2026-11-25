@@ -8,7 +8,7 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 
-from outlook_client import OutlookInbox
+from agent.mail.outlook_client import OutlookInbox
 
 ME = "fran@outlook.com"
 

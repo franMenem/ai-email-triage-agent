@@ -8,7 +8,7 @@ import asyncio
 import anthropic
 import httpx
 
-from models import Draft, Email
+from agent.models import Draft, Email
 from process_inbox import process_new_emails
 
 

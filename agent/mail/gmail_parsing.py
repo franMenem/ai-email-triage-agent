@@ -1,21 +1,23 @@
 """
-Pure functions that turn Gmail API data into the shapes mail_core.py works with.
+Pure functions that turn Gmail API data into the shapes mail/core.py works with.
 
 No network and no login here: they take the dicts the Gmail API returns and give
 back text or ThreadMessage records. The provider-independent rules (which email
-needs a reply, HTML to text, quotes, reply building) live in mail_core.py.
+needs a reply, HTML to text, quotes, reply building) live in mail/core.py.
 """
 
 import base64
 
-from mail_core import (
+from agent.mail.core import (
     ThreadMessage,
     build_reply_message,
-    format_thread as format_thread_text,
     html_to_text,
 )
-from mail_core import email_to_answer as _email_to_answer
-from mail_core import has_newer_draft as _has_newer_draft
+from agent.mail.core import email_to_answer as _email_to_answer
+from agent.mail.core import (
+    format_thread as format_thread_text,
+)
+from agent.mail.core import has_newer_draft as _has_newer_draft
 
 
 def _decode(part):

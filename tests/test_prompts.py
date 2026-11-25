@@ -1,7 +1,7 @@
 """Prompts and profiles: what the code relies on being there. No API calls."""
 
-from profiles import PROFILES
-from prompts import FREELANCE_PROMPT, STORE_PROMPT
+from agent.profiles import PROFILES
+from agent.prompts import FREELANCE_PROMPT, STORE_PROMPT
 
 
 def test_prompts_explain_the_untrusted_email_block():

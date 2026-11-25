@@ -20,7 +20,7 @@ Run it with:
 import json
 from pathlib import Path
 
-import rag
+from agent import rag
 
 EVALS_DIR = Path(__file__).parent
 

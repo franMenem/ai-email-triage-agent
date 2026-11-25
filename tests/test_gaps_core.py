@@ -12,14 +12,14 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-import drafter
 import main
 import process_inbox
-from inboxes import open_inbox
-from models import Draft, Email
-from profiles import PROFILES
-from prompts import FREELANCE_PROMPT, STORE_PROMPT
-from tools import EXECUTORS, find_order, find_policy, run_tool
+from agent import drafter
+from agent.mail.inboxes import open_inbox
+from agent.models import Draft, Email
+from agent.profiles import PROFILES
+from agent.prompts import FREELANCE_PROMPT, STORE_PROMPT
+from agent.tools import EXECUTORS, find_order, find_policy, run_tool
 
 MAIL = Email(
     message_id="t",
@@ -400,10 +400,10 @@ def test_watch_survives_a_failed_round_and_sleeps_the_minutes(monkeypatch):
 @pytest.mark.parametrize(
     "provider, module, cls",
     [
-        ("gmail", "gmail_client", "GmailInbox"),
-        ("outlook", "outlook_client", "OutlookInbox"),
-        ("imap", "imap_client", "ImapInbox"),
-        (None, "gmail_client", "GmailInbox"),
+        ("gmail", "agent.mail.gmail_client", "GmailInbox"),
+        ("outlook", "agent.mail.outlook_client", "OutlookInbox"),
+        ("imap", "agent.mail.imap_client", "ImapInbox"),
+        (None, "agent.mail.gmail_client", "GmailInbox"),
     ],
 )
 def test_open_inbox_connects_to_the_configured_provider(
@@ -435,8 +435,8 @@ def test_prompts_keep_their_security_rules():
     assert "belongs to the sender" in STORE_PROMPT
 
 
-# --------------------------------------------------------------- mail_core.py
-from mail_core import (  # noqa: E402
+# --------------------------------------------------------------- mail/core.py
+from agent.mail.core import (  # noqa: E402
     THREAD_MAX_CHARS,
     ThreadMessage,
     build_reply_message,

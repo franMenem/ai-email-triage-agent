@@ -12,8 +12,8 @@ of what the API returns lives in gmail_parsing.py.
 Permissions (SCOPES): read emails and create drafts. This file NEVER has a
 method that sends email: a person reviews every draft and sends it.
 
-Run it with: uv run python gmail_client.py           (lists pending emails)
-             uv run python gmail_client.py --watch   (starts or renews the Gmail watch)
+Run it with: uv run python -m agent.mail.gmail_client           (lists pending emails)
+             uv run python -m agent.mail.gmail_client --watch   (starts or renews the Gmail watch)
 """
 
 import json
@@ -28,15 +28,15 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
-from gmail_parsing import (
+from agent.mail.core import ALL_MAIL, PENDING_MAX_DAYS, looks_automated, strip_quoted
+from agent.mail.gmail_parsing import (
     build_reply,
     email_to_answer,
     extract_text,
     format_thread,
     get_headers,
 )
-from mail_core import ALL_MAIL, PENDING_MAX_DAYS, looks_automated, strip_quoted
-from models import Email
+from agent.models import Email
 
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
@@ -50,7 +50,7 @@ PUBSUB_TOPIC = os.environ.get(
     "GMAIL_PUBSUB_TOPIC", "projects/ai-email-triage-agent-513617/topics/gmail-agent"
 )
 
-BASE_DIR = Path(__file__).parent
+BASE_DIR = Path(__file__).parents[2]  # the repo root
 CREDENTIALS_PATH = BASE_DIR / "credentials.json"
 TOKEN_PATH = BASE_DIR / "token.json"
 
@@ -97,7 +97,7 @@ class GmailInbox:
         """IDs of the emails the agent handles that still need a reply.
 
         For each recent thread, the latest message counts if it's from the client
-        (not from you) and has no draft written after it (see mail_core.email_to_answer).
+        (not from you) and has no draft written after it (see mail/core.py, email_to_answer).
         Read or unread doesn't matter. This is also what makes the agent idempotent
         without keeping any state: once the draft exists, or once you reply, the
         thread is skipped. Delete the draft and the next run writes a new one.

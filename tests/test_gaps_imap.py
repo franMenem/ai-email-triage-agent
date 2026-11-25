@@ -8,7 +8,7 @@ from email.message import EmailMessage
 
 import pytest
 
-from imap_client import (
+from agent.mail.imap_client import (
     ImapInbox,
     ImapRecord,
     body_text,

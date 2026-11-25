@@ -12,7 +12,7 @@ Setup (one time):
 2. Authentication -> "Allow public client flows" -> Yes.
 3. API permissions -> Microsoft Graph -> Delegated: Mail.ReadWrite, User.Read.
 4. Put the "Application (client) ID" in MS_CLIENT_ID and run:
-       uv run python outlook_client.py --login
+       uv run python -m agent.mail.outlook_client --login
    It shows a code to enter at microsoft.com/devicelogin and saves ms_token.json.
    On a server, put the contents of that file in MS_TOKEN_CACHE.
 5. In Outlook, create a rule that adds the category "agente" to your clients'
@@ -30,7 +30,7 @@ from pathlib import Path
 import httpx
 import msal
 
-from mail_core import (
+from agent.mail.core import (
     ALL_MAIL,
     PENDING_MAX_DAYS,
     ThreadMessage,
@@ -39,12 +39,12 @@ from mail_core import (
     looks_automated,
     strip_quoted,
 )
-from models import Email
+from agent.models import Email
 
 GRAPH = "https://graph.microsoft.com/v1.0"
 SCOPES = ["Mail.ReadWrite", "User.Read"]
 AUTHORITY = "https://login.microsoftonline.com/common"  # personal and work accounts
-TOKEN_PATH = Path(__file__).parent / "ms_token.json"
+TOKEN_PATH = Path(__file__).parents[2] / "ms_token.json"
 # Graph allows up to 10,080 minutes for mail subscriptions; renewed every day anyway
 SUBSCRIPTION_DAYS = 6
 # Bodies as plain text, so Claude doesn't get HTML
@@ -83,7 +83,7 @@ def access_token():
     result = app.acquire_token_silent(SCOPES, account=accounts[0]) if accounts else None
     if not result or "access_token" not in result:
         raise RuntimeError(
-            "No valid Microsoft login: run `python outlook_client.py --login`"
+            "No valid Microsoft login: run `python -m agent.mail.outlook_client --login`"
         )
     return result["access_token"]
 
@@ -163,7 +163,7 @@ class OutlookInbox:
         return {m["conversationId"] for m in data.get("value", [])}
 
     def list_pending(self):
-        """IDs of the emails that still need a reply (see mail_core.email_to_answer)."""
+        """IDs of the emails that still need a reply (see mail/core.py, email_to_answer)."""
         pending = []
         for conversation_id in self._recent_ids():
             data = self._get(

@@ -39,9 +39,9 @@ from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel
 
-from drafter import draft_reply
-from inboxes import open_inbox
-from models import Email
+from agent.drafter import draft_reply
+from agent.mail.inboxes import open_inbox
+from agent.models import Email
 from process_inbox import process_new_emails
 
 app = FastAPI()

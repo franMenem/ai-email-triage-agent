@@ -2,8 +2,13 @@
 
 import base64
 
-from gmail_parsing import email_to_answer, extract_text, format_thread, has_newer_draft
-from mail_core import html_to_text, strip_quoted
+from agent.mail.core import html_to_text, strip_quoted
+from agent.mail.gmail_parsing import (
+    email_to_answer,
+    extract_text,
+    format_thread,
+    has_newer_draft,
+)
 
 
 def b64(text):
