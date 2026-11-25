@@ -115,7 +115,14 @@ def html_to_text(html: str) -> str:
 
 
 # "On Mon, 3 Nov 2026, Mark <k@x.com> wrote:" / "El lun, 3 nov 2026, Mark escribió:"
-_QUOTE_HEADER = re.compile(r"^(On .+ wrote:|El .+ escribió:)\s*$", re.IGNORECASE)
+# ("escribio:" without the accent too: some clients and keyboards drop it)
+_QUOTE_HEADER = re.compile(r"^(On .+ wrote:|El .+ escribi[oó]:)\s*$", re.IGNORECASE)
+# Email clients wrap that header when it's long, leaving on a second line only
+# "wrote:" or "<k@x.com> wrote:". Nothing else is accepted there, so a normal
+# sentence that happens to end in "wrote:" isn't taken for a quote header.
+_QUOTE_HEADER_END = re.compile(
+    r"^(\(?<[^<>\s]+@[^<>\s]+>\)?\s*)?(wrote|escribi[oó]):$", re.IGNORECASE
+)
 # Outlook's quote separator: "From: Mark <k@x.com>" right after a line of underscores or alone
 _OUTLOOK_QUOTE = re.compile(
     r"^(_{10,}|-{2,} ?Original Message ?-{2,}|From: .+@.+)$", re.IGNORECASE
@@ -129,9 +136,18 @@ def strip_quoted(text: str) -> str:
     quote would only repeat them.
     """
     kept = []
-    for line in text.splitlines():
+    lines = text.splitlines()
+    for position, line in enumerate(lines):
         stripped = line.strip()
-        if _QUOTE_HEADER.match(stripped) or _OUTLOOK_QUOTE.match(stripped):
+        following = lines[position + 1].strip() if position + 1 < len(lines) else ""
+        wrapped_header = _QUOTE_HEADER_END.match(following) and _QUOTE_HEADER.match(
+            f"{stripped} {following}"
+        )
+        if (
+            _QUOTE_HEADER.match(stripped)
+            or _OUTLOOK_QUOTE.match(stripped)
+            or wrapped_header
+        ):
             break
         if not line.lstrip().startswith(">"):
             kept.append(line)

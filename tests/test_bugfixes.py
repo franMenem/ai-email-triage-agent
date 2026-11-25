@@ -20,6 +20,7 @@ import main
 import process_inbox
 from agent import drafter
 from agent.mail import gmail_client
+from agent.mail.core import strip_quoted
 from agent.mail.imap_client import parse_fetch
 from agent.mail.outlook_client import OutlookInbox, graph_headers
 from agent.models import Draft, Email
@@ -773,3 +774,53 @@ def test_parse_fetch_does_not_take_a_uid_from_the_email_itself():
 def test_parse_fetch_without_any_uid_says_so():
     with pytest.raises(ValueError, match="without UID"):
         parse_fetch([(b"1 (BODY[] {1}", b"a"), b")"])
+
+
+# --------------------------- 13. strip_quoted: wrapped header, "escribio:"
+@pytest.mark.parametrize(
+    "header",
+    [
+        "On Mon, 2 Nov 2026 at 10:00, Fran <f@x.com>\nwrote:",
+        "On Mon, Nov 2, 2026 at 10:00 AM Fran Menem\n<f@x.com> wrote:",
+        "  On Mon, 2 Nov 2026 at 10:00, Fran <f@x.com>  \n   wrote:  ",
+        "El lun, 2 nov 2026 a las 10:00, Fran <f@x.com>\nescribió:",
+        "El lun, 2 nov 2026 a las 10:00, Fran Menem\n(<f@x.com>) escribió:",
+        "El lun, 2 nov 2026 a las 10:00, Fran <f@x.com>\nescribio:",
+        "on mon, 2 nov 2026 at 10:00, fran <f@x.com>\nWROTE:",
+    ],
+)
+def test_strip_quoted_finds_a_quote_header_wrapped_in_two_lines(header):
+    marked = f"Tuesday works!\n\n{header}\n> Tuesday or Thursday?\n> Fran"
+    assert strip_quoted(marked) == "Tuesday works!"
+    unmarked = f"Tuesday works!\n\n{header}\nTuesday or Thursday?\nFran"
+    assert strip_quoted(unmarked) == "Tuesday works!"
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        "El lun, 2 nov 2026, Fran <f@x.com> escribio:",
+        "El lun, 2 nov 2026, Fran <f@x.com> ESCRIBIO:",
+        "El lun, 2 nov 2026, Fran <f@x.com> escribió:",
+    ],
+)
+def test_strip_quoted_spanish_header_with_or_without_the_accent(header):
+    body = f"Dale, el martes.\n\n{header}\nTexto viejo sin marcas"
+    assert strip_quoted(body) == "Dale, el martes."
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "On Tuesday I can't.\nWednesday works.",
+        "On Tuesday works for me.\nAs Mark wrote: bring the report.\nBye",
+        "On Tuesday works for me.\nAs Mark wrote:\nBye",
+        "On Tuesday works for me.\n\nwrote:\nBye",
+        "On the form I\nwrote: Mark\nBye",
+        "El martes puedo.\nNo me escribio: lo llamo yo.\nSaludos",
+        "wrote:\nBye",
+        "On Mon, 2 Nov 2026, Fran <f@x.com>\nescribió:\nBye",
+    ],
+)
+def test_strip_quoted_keeps_text_that_only_resembles_a_wrapped_header(body):
+    assert strip_quoted(body) == body
