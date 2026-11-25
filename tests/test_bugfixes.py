@@ -12,11 +12,13 @@ from types import SimpleNamespace as NS
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 import agent
 import main
+import process_inbox
 from agent import drafter
-from agent.models import Email
+from agent.models import Draft, Email
 from agent.tools import find_order, run_tool
 
 TOKEN = "test-token"
@@ -346,3 +348,108 @@ def test_an_answer_without_text_raises_a_clear_error(monkeypatch, stop_reason, c
     fake = ScriptedClaude(NS(stop_reason=stop_reason, content=content))
     with pytest.raises(drafter.DraftError, match=stop_reason):
         run_draft(monkeypatch, fake)
+
+
+# ------------------------- 7. one email that fails must not stop the others
+class FlakyInbox:
+    """Three pending emails; reading or drafting the ones listed fails."""
+
+    def __init__(self, fail_read=(), fail_draft=()):
+        self.fail_read, self.fail_draft = fail_read, fail_draft
+        self.drafts = {}
+
+    def list_pending(self):
+        return ["1", "2", "3"]
+
+    def read_email(self, message_id):
+        if message_id in self.fail_read:
+            raise RuntimeError("the mailbox failed reading this email")
+        return Email(message_id=message_id, sender="m@x.com", subject="Hi", body="b")
+
+    def create_draft(self, message_id, text):
+        if message_id in self.fail_draft:
+            raise RuntimeError("the mailbox failed saving this draft")
+        self.drafts[message_id] = text
+
+
+def claude_failing_on(message_id, error):
+    async def draft_fn(mail, profile):
+        if mail.message_id == message_id:
+            raise error() if callable(error) else error
+        return Draft(draft="ok", internal_notes="n", intent="other", urgency="low")
+
+    return draft_fn
+
+
+def not_a_draft():
+    """What draft_reply raises when Claude's JSON doesn't fit `Draft`."""
+    try:
+        Draft.model_validate_json('{"draft": "only this"}')
+    except ValidationError as e:
+        return e
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        drafter.DraftError("Claude still asks for tools after 5 rounds"),
+        not_a_draft,
+        ModuleNotFoundError("No module named 'sentence_transformers'"),
+        KeyError("something unexpected"),
+    ],
+)
+def test_an_email_claude_cannot_draft_is_skipped_and_the_rest_go_on(error, capsys):
+    inbox = FlakyInbox()
+    draft_fn = claude_failing_on("1", error)
+    asyncio.run(process_inbox.process_new_emails("store", inbox, draft_fn=draft_fn))
+    assert inbox.drafts == {"2": "ok", "3": "ok"}, (
+        "No draft for the failed email (so the next round retries it), the rest done"
+    )
+    assert "will retry" in capsys.readouterr().out, "The error is printed, not hidden"
+
+
+def test_an_email_that_cannot_be_read_is_skipped_and_the_rest_go_on(capsys):
+    inbox = FlakyInbox(fail_read=["1"])
+    draft_fn = claude_failing_on(None, None)
+    asyncio.run(process_inbox.process_new_emails("store", inbox, draft_fn=draft_fn))
+    assert inbox.drafts == {"2": "ok", "3": "ok"}
+    assert "the mailbox failed reading" in capsys.readouterr().out
+
+
+def test_a_draft_that_cannot_be_saved_does_not_stop_the_rest(capsys):
+    inbox = FlakyInbox(fail_draft=["2"])
+    draft_fn = claude_failing_on(None, None)
+    asyncio.run(process_inbox.process_new_emails("store", inbox, draft_fn=draft_fn))
+    assert inbox.drafts == {"1": "ok", "3": "ok"}
+    out = capsys.readouterr().out
+    assert "the mailbox failed saving" in out
+    assert out.count("Draft created") == 2, "Not announced for the one that failed"
+
+
+def test_a_failing_list_pending_still_fails_the_round():
+    class Down(FlakyInbox):
+        def list_pending(self):
+            raise RuntimeError("the mailbox is down")
+
+    with pytest.raises(RuntimeError, match="down"):
+        asyncio.run(process_inbox.process_new_emails("store", Down()))
+
+
+def test_emails_endpoint_answers_500_when_claude_gives_no_draft(monkeypatch):
+    async def no_draft(email):
+        raise drafter.DraftError("Claude's answer has no text (stop_reason: refusal)")
+
+    async def works(email):
+        return Draft(draft="ok", internal_notes="n", intent="other", urgency="low")
+
+    body = {"message_id": "bugfix-7", "sender": "a@b.com", "subject": "s", "body": "b"}
+    monkeypatch.setattr(main, "draft_reply", no_draft)
+    response = client.post("/emails", json=body)
+    assert response.status_code == 500
+    assert response.json() == {"detail": "The service is not available right now"}, (
+        "Same answer as the other errors that retrying won't fix; no internals leaked"
+    )
+    monkeypatch.setattr(main, "draft_reply", works)
+    assert client.post("/emails", json=body).json()["status"] == "received", (
+        "A failed email is not marked as seen"
+    )

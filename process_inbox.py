@@ -43,16 +43,21 @@ async def process_new_emails(profile, inbox: Inbox, draft_fn=draft_reply):
     print(f"Profile: {profile} | New emails to process: {len(new_ids)}")
 
     for message_id in new_ids:
-        mail = await asyncio.to_thread(inbox.read_email, message_id)
-        print(f"\n— From: {mail.sender} | Subject: {mail.subject}")
+        # Whatever fails for one email (reading it, Claude, an answer that isn't a
+        # valid Draft, saving the draft) skips only that email: the rest of the round
+        # goes on. No draft is created for it, so the next run retries it.
         try:
+            mail = await asyncio.to_thread(inbox.read_email, message_id)
+            print(f"\n— From: {mail.sender} | Subject: {mail.subject}")
             draft = await draft_fn(mail, profile)
+            await asyncio.to_thread(inbox.create_draft, message_id, draft.draft)
         except anthropic.APIError as e:
-            # No draft is created, so the next run retries it
             print(f"  Claude API error, will retry: {e}")
             continue
+        except Exception as e:
+            print(f"  Error on email {message_id}, skipped, will retry: {e!r}")
+            continue
 
-        await asyncio.to_thread(inbox.create_draft, message_id, draft.draft)
         print(f"  Intent: {draft.intent} | Urgency: {draft.urgency}")
         print(f"  Internal notes: {draft.internal_notes}")
         print("  ✅ Draft created")

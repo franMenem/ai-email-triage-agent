@@ -39,7 +39,7 @@ from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel
 
-from agent.drafter import draft_reply
+from agent.drafter import DraftError, draft_reply
 from agent.mail.inboxes import open_inbox
 from agent.models import Email
 from process_inbox import process_new_emails
@@ -98,6 +98,11 @@ async def receive(email: Email):
             raise HTTPException(
                 status_code=500, detail="The service is not available right now"
             )
+    except DraftError:
+        # Claude answered, but without a usable draft: retrying right away won't fix it
+        raise HTTPException(
+            status_code=500, detail="The service is not available right now"
+        )
 
 
 def same_token(given, expected: str) -> bool:
