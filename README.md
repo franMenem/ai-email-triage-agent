@@ -306,6 +306,7 @@ uv run pytest
 | `tests/test_rag.py` | FAQ search with hand-made vectors (no model): similarity, ranking, ties, minimum score, maximum count. Five more tests use the real model and are skipped without the `rag` group |
 | `tests/test_search_docs_tool.py` | The `search_docs` tool: Claude can't change the limits, the email body is never searched, errors aren't reported as "no documents", the model isn't loaded at startup |
 | `tests/test_gaps_*.py` | Written after a mutation audit (below): the drafting loop, permissions, webhooks, automated-mail detection, and the three mail clients |
+| `tests/test_bugfixes.py` | One section per bug the audit found: each test reproduced the bug before the fix |
 
 **Mutation audit.** To check the tests themselves, the code was broken on purpose in 253 small ways, one at a time (a condition flipped, a permission check removed, an error swallowed). The original suite noticed 92 of them. The 115 tests in `tests/test_gaps_*.py` catch 154 of the 161 that got through. They pin today's behavior; the bugs the audit found along the way are tracked in the roadmap. Two caveats: the mutations were made by hand in a throwaway copy, so the list isn't in this repo and the numbers can't be re-run from it; and the new tests were written looking at those same mutations, so "154 of 161" measures how well they cover that list, not mutations in general.
 
@@ -327,7 +328,7 @@ Each draft is scored on four checks: intent, urgency, `ALERT:` when (and only wh
 | Claude Sonnet 5.5 | 31/31 | 31/31 | 31/31 | 31/31 | 0 | 4.4 s |
 | Claude Opus 5.5 | 30/30 | 30/30 | 30/30 | 30/30 | 1 | 5.4 s |
 
-One run per model, so 31/31 against 30/30 says nothing about which is better: on these checks they are indistinguishable, and the default is the cheapest and fastest. Opus's error: on a prompt-injection email its answer came back cut off mid-sentence, so it wasn't valid JSON and no draft was produced. The run didn't record why it stopped. In an earlier run of 20 cases, Sonnet once wrote `ALERT:` in the middle of the notes instead of at the start. Slips like these are what the evals are for. The detailed answers of each model are in `evals/results/`.
+One run per model, so 31/31 against 30/30 says nothing about which is better: on these checks they are indistinguishable, and the default is the cheapest and fastest. Opus's error: on a prompt-injection email its answer came back cut off mid-sentence, so it wasn't valid JSON and no draft was produced. The run didn't record why it stopped; since then an answer with no usable text raises a clear error that includes the stop reason, and one failing email no longer stops the rest of the round. In an earlier run of 20 cases, Sonnet once wrote `ALERT:` in the middle of the notes instead of at the start. Slips like these are what the evals are for. The detailed answers of each model are in `evals/results/`.
 
 **What these checks do and don't prove.** They are substring checks, and they catch gross errors: the wrong language, leaked data, a missing key fact. They don't prove a draft is correct. 7 of the 31 cases have no content check at all, 3 don't check the alert, and the run doesn't record which tools were called, so "it used `find_order`" rests on the model's own notes. Reading the saved drafts turned up things that passed and shouldn't have: a project status that wasn't in the email, and a promise to reply "the next business day" that isn't in the FAQ. Closing that gap (recording tool calls, checking facts that only a tool can supply, a judge for faithfulness) is the next step.
 
@@ -359,7 +360,7 @@ Python 3.12 · Anthropic SDK (Claude, tool calling, structured outputs) · sente
 - [ ] FAQ search on the deployed server (embeddings through an API, or vectors computed ahead of time)
 - [ ] Better retrieval, measured on fresh queries: typical questions per document, a question-against-passage model, the policies in the same index; then a vector database
 - [ ] Stronger evals: record tool calls, check facts that only a tool supplies, more than one run per model
-- [ ] Fix the bugs the audit found: Outlook pagination, non-object webhook payloads, case-sensitive order lookup, no cap on tool-calling rounds
+- [x] Fixed the bugs the audit found (13, one test and one commit each): malformed webhook payloads, case-sensitive order lookup, no cap on tool-calling rounds, one bad email stopping the whole round, Outlook and Gmail pagination, and more. The pagination and Outlook fixes are tested against fakes only, not yet against the real services
 - [ ] LLM judge for draft quality, and tracing
 - [ ] Ready-made profiles per industry: law firms, accountants, online courses, sales teams
 - [ ] Small web page to review, edit and approve drafts before they go to Gmail

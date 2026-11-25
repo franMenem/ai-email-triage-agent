@@ -14,8 +14,9 @@ from agent.tools import run_tool
 
 # Created once per module; the API key comes from ANTHROPIC_API_KEY
 client = anthropic.AsyncAnthropic()
-# Default model, chosen with the evals (see "Evals" in README.md): same scores as Opus and
-# Sonnet on every case, and the cheapest and fastest. The evals can pass another one.
+# Default model, chosen with the evals (see "Evals" in README.md): on those checks it is
+# not distinguishable from Sonnet or Opus, and it's the cheapest and fastest. The evals
+# can pass another one.
 MODEL = "claude-haiku-5-5"
 
 # The structured-output schema comes from the Pydantic model: one source of truth
