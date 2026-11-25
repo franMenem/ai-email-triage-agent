@@ -7,7 +7,7 @@ To add a new use case, add a profile here; drafter.py doesn't change.
 from dataclasses import dataclass, field
 
 from prompts import FREELANCE_PROMPT, STORE_PROMPT
-from tools import TOOL_FIND_ORDER, TOOL_FIND_POLICY
+from tools import TOOL_FIND_ORDER, TOOL_FIND_POLICY, TOOL_SEARCH_DOCS
 
 
 @dataclass(frozen=True)
@@ -19,7 +19,9 @@ class Profile:
 
 PROFILES = {
     # Demo: customer support for an online store, with orders and policies in the database
-    "store": Profile("store", STORE_PROMPT, [TOOL_FIND_ORDER, TOOL_FIND_POLICY]),
+    "store": Profile(
+        "store", STORE_PROMPT, [TOOL_FIND_ORDER, TOOL_FIND_POLICY, TOOL_SEARCH_DOCS]
+    ),
     # Daily use: replies to Fran's clients, no tools (yet)
     "freelance": Profile("freelance", FREELANCE_PROMPT),
 }

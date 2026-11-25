@@ -18,6 +18,9 @@ entrypoint = "main:app"
 dev = [
     "pytest>=9.2.0",
 ]
+rag = [
+    "sentence-transformers>=6.3.0",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

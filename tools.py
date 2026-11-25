@@ -82,6 +82,34 @@ TOOL_FIND_POLICY = {
     },
 }
 
+TOOL_SEARCH_DOCS = {
+    "name": "search_docs",
+    "description": (
+        "Searches the store's FAQ and returns the documents closest in meaning to the "
+        "query. Use it for questions about how the store works that the other tools "
+        "don't cover: opening hours, tracking an order on the website, invoices, gift "
+        "cards, out-of-stock products, wholesale prices, physical stores or the "
+        "customer's account. Don't use it for the status of an order (use find_order) "
+        "or for returns, exchanges, shipping, payment methods or warranty (use "
+        "find_policy). It returns the closest documents it has, so they may not answer "
+        "the question: use one only if it actually does. If nothing is close enough, "
+        "it says so."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": (
+                    "The customer's question as one short sentence, in the customer's "
+                    "own words, e.g. 'Are you open on Saturdays?'"
+                ),
+            }
+        },
+        "required": ["query"],
+    },
+}
+
 
 def _run_find_order(tool_input, email):
     order = find_order(tool_input["order_id"], email.sender)
@@ -94,11 +122,25 @@ def _run_find_policy(tool_input, email):
     return find_policy(tool_input["topic"]) or "There is no policy on that topic."
 
 
+def _run_search_docs(tool_input, email):
+    # Imported here, not at the top: the rest of the agent starts and runs without
+    # the FAQ search, which needs the optional "rag" dependency group.
+    import rag
+
+    # k and the minimum score are not taken from Claude: search_docs uses the values
+    # chosen in rag.py from measured scores.
+    texts = rag.search_docs(tool_input["query"], rag.faq_index(), rag.FAQ_DOCS)
+    if not texts:
+        return "No FAQ document answers that question."
+    return "\n\n".join(texts)
+
+
 # Tool name -> function that runs it. Receives what Claude asked for
 # (`tool_input`) and the original email (`email`), and returns text for Claude.
 EXECUTORS = {
     "find_order": _run_find_order,
     "find_policy": _run_find_policy,
+    "search_docs": _run_search_docs,
 }
 
 
