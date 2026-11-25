@@ -135,7 +135,7 @@ customer question ──> Claude calls search_docs("...") ──> vector of the 
                                                              │
                               cosine similarity against every document
                                                              │
-                     keep score >= 0.40, at most 3, best first ──> texts back to Claude
+                     keep score >= 0.40, at most 2, best first ──> texts back to Claude
 ```
 
 It's written by hand in `agent/rag.py` (about 100 lines, no vector database, no framework) so every step can be read and tested. The embedding model is `paraphrase-multilingual-mpnet-base-v2`, running locally with sentence-transformers.
@@ -156,7 +156,7 @@ How much to trust this:
 
 - 0.40 was fixed before the test queries existed, so 14/16 is an honest check of that value. Since then I've used the test group to turn down 0.45 and two experiments, so it now works as a validation set: the next change needs fresh queries, ideally real customer emails and not ones I wrote.
 - The two groups disagree about 0.45 (one more rejection on dev, two fewer hits on test). A two-query difference is noise, so I kept the value I already had. The threshold isn't pinned down to better than about ±0.05: three queries sit within 0.05 of it.
-- **The maximum count (3) is a cap, not a tuned value.** Whenever the right document passes the threshold it is ranked first, so a maximum of 1 finds exactly the same documents with less noise (of the documents returned for answerable queries, 14 of 21 are the right one on test with a maximum of 3; 14 of 14 with 1). It's left at 3 for emails that ask two things, which this set doesn't cover yet.
+- **The maximum count (2) is a cap, not a tuned value.** Whenever the right document passes the threshold it is ranked first, so a maximum of 1 finds exactly the same documents. Of the documents returned for answerable test queries, the right one is 14 of 21 with a maximum of 3, 14 of 18 with 2 and 14 of 14 with 1. I lowered it from 3 to 2: less noise for Claude, and still room for an email that asks two things, which this set doesn't cover yet. The end-to-end evals below were run with 3 and haven't been rerun.
 - "Unanswerable" mixes two kinds of query that behave in opposite ways. Questions nothing in the store answers (the weather, motorcycle parts) get no documents 11 times out of 12. Questions a *policy* answers (returns, warranty, installments) get FAQ documents anyway 4 times out of 6, because the nearest FAQ text is still close.
 
 No value gets both columns right, so the threshold is not the only defense:

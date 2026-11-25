@@ -34,7 +34,7 @@ MODEL_NAME = "paraphrase-multilingual-mpnet-base-v2"
 # Chosen by looking at real scores, not by feel: see evals/results/retrieval.json.
 # They only hold for this model; another model needs them measured again.
 MIN_SCORE = 0.40  # below this, a document is not worth showing to Claude
-TOP_K = 3  # at most this many documents per query
+TOP_K = 2  # at most this many documents per query
 
 _model = None
 _faq_index = None
