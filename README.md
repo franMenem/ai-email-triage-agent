@@ -9,8 +9,8 @@ Works with **Gmail / Google Workspace, Outlook / Microsoft 365, and any IMAP mai
 > **Highlights**
 > - **In production:** deployed on FastAPI Cloud with Gmail push notifications; I use it every day with my own clients.
 > - **LLM engineering:** tool calling against a database, structured outputs (Pydantic), whole-thread context, 3 mail providers behind one interface.
-> - **RAG, measured:** FAQ search over embeddings as a tool, with the similarity threshold chosen from a labeled set of queries, not by feel: the right document comes back for 19 of 22 answerable questions.
-> - **Evals, not vibes:** 31 cases (normal, angry, multilingual, FAQ questions, prompt-injection attacks). Haiku, the default for cost and speed, passes 31/31.
+> - **RAG, measured:** FAQ search over embeddings as a tool, with the similarity threshold chosen from labeled queries, not by feel, and checked on a held-out set: the right document comes back for 14 of 16 answerable questions it had never seen. Two "improvements" were tried and dropped because they didn't hold there.
+> - **Evals, not vibes:** 31 cases (normal, angry, multilingual, FAQ questions, prompt-injection attacks) run across Opus, Sonnet and Haiku. Haiku and Sonnet pass 31/31, so Haiku is the default for cost and speed.
 > - **Security by design:** a human approves every draft, the code cannot send email, authorization lives in code (not in the prompt), tested against prompt injection and SQL injection.
 > - **Tested:** pytest with fakes for the LLM and every mailbox, running in GitHub Actions on each push.
 
@@ -140,14 +140,17 @@ customer question ──> Claude calls search_docs("...") ──> vector of the 
 
 It's written by hand in `agent/rag.py` (about 100 lines, no vector database, no framework) so every step can be read and tested. The embedding model is `paraphrase-multilingual-mpnet-base-v2`, running locally with sentence-transformers.
 
-**Two numbers decide what Claude sees, and both were chosen by measuring.** Similarity search always returns *something* close, which is not the same as something correct, so a document needs a minimum score to be shown at all. `evals/retrieval_cases.json` has 32 labeled queries in English and Spanish: 22 that a FAQ document answers and 10 that none does. This is what each minimum score costs:
+**Two numbers decide what Claude sees, and both were chosen by measuring.** Similarity search always returns *something* close, which is not the same as something correct, so a document needs a minimum score to be shown at all. `evals/retrieval_cases.json` has 56 labeled queries in English and Spanish, some that a FAQ document answers and some that none does, in two groups: 32 looked at while choosing the numbers (*dev*) and 24 written afterwards and never used to choose anything (*test*). This is what each minimum score costs:
 
-| Minimum score | Right document returned | Unanswerable query gets nothing |
-|---|---|---|
-| 0.30 | 20/22 | 6/10 |
-| **0.40** (current) | **19/22** | **7/10** |
-| 0.50 | 16/22 | 9/10 |
-| 0.60 | 12/22 | 10/10 |
+| Minimum score | Dev: right document returned | Dev: unanswerable gets nothing | Test: right document returned | Test: unanswerable gets nothing |
+|---|---|---|---|---|
+| 0.30 | 20/22 | 6/10 | 14/16 | 4/8 |
+| **0.40** (current) | **19/22** | **7/10** | **14/16** | **6/8** |
+| 0.45 | 19/22 | 8/10 | 12/16 | 6/8 |
+| 0.50 | 16/22 | 9/10 | 11/16 | 6/8 |
+| 0.60 | 12/22 | 10/10 | 6/16 | 7/8 |
+
+The held-out group earned its place right away: on dev alone, 0.45 looks strictly better than 0.40 (same hits, one more rejection). On test it loses two right answers and rejects nothing extra, so 0.40 stays.
 
 No value gets both columns right, so the threshold is not the only defense:
 
@@ -158,7 +161,17 @@ No value gets both columns right, so the threshold is not the only defense:
 | Prompt | "Use a document only if it actually answers the question"; otherwise the draft says the team will look into it |
 | Human review | Every draft is read before it's sent |
 
-**What it gets wrong today.** Three answerable queries don't get their document: *"Where is my package right now?"*, *"¿Tienen local a la calle?"* and one that scores 0.39, just under the threshold. Three unanswerable ones get documents anyway, for example *"Can I pay in installments?"* returns the gift-card document. The thresholds only hold for this embedding model: with another one they have to be measured again.
+**What it gets wrong today.** Some answerable queries don't get their document, mostly short Spanish questions against English documents: *"¿Tienen local a la calle?"*, *"¿Venden por mayor?"*, *"¿Tienen sucursales?"*. And some unanswerable ones get documents anyway. Most of those are really policy questions (*"Can I return a product after 40 days?"* scores 0.61 against the out-of-stock document), which is why the tool description sends those to `find_policy` and the prompt tells Claude to use a document only if it answers. The thresholds only hold for this embedding model: with another one they have to be measured again.
+
+**Tried and dropped.** Both looked like obvious wins and neither survived the held-out queries, so neither is in the code:
+
+| Idea | Dev | Test | Verdict |
+|---|---|---|---|
+| Baseline: embeddings only, minimum 0.40 | 19/22 found, 7/10 rejected | 14/16 found, 6/8 rejected | Kept |
+| Hybrid search: add a TF-IDF term-overlap bonus to the similarity | 20/22, 8/10 | 13/16, 6/8 at best | Better on dev, worse on test. With English documents and half the queries in Spanish there are few shared words to reward, and the bonus also lifts wrong documents |
+| Bilingual index: embed each document in English and Spanish, keep the higher score | 19/22, 8/10 | 13/16, 6/8 | No gain: the model is already multilingual, and Spanish text also scores higher against the wrong documents |
+
+With 56 queries these are small numbers and one query moves a result, which is exactly why a change has to win on both groups before it goes in. The likely real fix is not in the scoring: put the policies in the same index, so a returns question finds the returns policy instead of the nearest FAQ document.
 
 ```bash
 uv sync --group rag                                     # the embedding model, about 1 GB, only needed for this
@@ -303,11 +316,11 @@ Each draft is scored on four checks: intent, urgency, `ALERT:` when (and only wh
 
 | Model | Intent | Urgency | Alert | Content | All checks | Avg time |
 |---|---|---|---|---|---|---|
-| **Claude Haiku 5.5** (default), all 31 cases | 31/31 | 31/31 | 31/31 | 31/31 | 31/31 | 5.9 s |
-| Claude Sonnet 5.5, first 22 cases | 22/22 | 22/22 | 22/22 | 22/22 | 22/22 | 4.5 s |
-| Claude Opus 5.5, first 22 cases | 22/22 | 22/22 | 22/22 | 22/22 | 22/22 | 5.6 s |
+| **Claude Haiku 5.5** (default) | 31/31 | 31/31 | 31/31 | 31/31 | 31/31 | 5.9 s |
+| Claude Sonnet 5.5 | 31/31 | 31/31 | 31/31 | 31/31 | 31/31 | 6.7 s |
+| Claude Opus 5.5 | 30/31 | 30/31 | 30/31 | 30/31 | 30/31 | 6.7 s |
 
-All three models passed the first 22 cases, so the default is the cheapest and fastest one; the 9 FAQ-search cases were added later and have only been run with Haiku. Its average time went up from 3.6 s because the run now loads the embedding model.
+Haiku and Sonnet pass every case, so the default is the cheapest and fastest one. Opus failed one: on a prompt-injection email its answer came back cut off mid-sentence, so it wasn't valid JSON and no draft was produced. No draft was produced, and it exposed a real gap: the code didn't handle an incomplete answer with a clear error. In an earlier run of 20 cases, Sonnet once wrote `ALERT:` in the middle of the notes instead of at the start. Format slips like these are exactly what the evals are for. The times include loading the embedding model during the run; the detailed answers of each model are in `evals/results/`.
 
 In the FAQ cases the internal notes show the layers working. Asked about motorcycle parts, the search returned the wholesale document; the notes say *"It does not answer whether motorcycle parts are sold, so no product availability was confirmed"* and the draft says the team will look into it. Asked about installments, Claude went to `find_policy` instead of the FAQ. In an earlier run of 20 cases, Sonnet once wrote `ALERT:` in the middle of the notes instead of at the start; that format slip is exactly what the evals are for. The detailed answers of each model are in `evals/results/`.
 

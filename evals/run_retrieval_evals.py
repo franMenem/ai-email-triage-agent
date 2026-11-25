@@ -5,7 +5,12 @@ Each case in retrieval_cases.json is a query and the id of the document that
 answers it, or null when no FAQ document does. No Claude calls: this only runs
 the embedding model, so it's free and takes a few seconds.
 
-Three numbers, with the settings the tool uses (rag.MIN_SCORE and rag.TOP_K):
+The cases come in two groups:
+- dev: the ones looked at while choosing rag.MIN_SCORE and rag.TOP_K
+- test: written afterwards and never used to choose anything. A change only
+  counts as an improvement if it also holds here
+
+Three numbers per group, with the settings the tool uses:
 - found: of the queries that have an answer, how many get their document back
 - top 1: of those same queries, how many get it in first place
 - rejected: of the queries with no answer, how many get no documents at all
@@ -23,6 +28,8 @@ from pathlib import Path
 from agent import rag
 
 EVALS_DIR = Path(__file__).parent
+SPLITS = ["dev", "test"]
+MIN_SCORES = [0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6]
 
 
 def retrieve(ranked, min_score, k):
@@ -54,9 +61,12 @@ def main():
     scored_cases = [
         {**case, "ranked": rag.score_docs(case["query"], index)} for case in cases
     ]
+    by_split = {
+        split: [c for c in scored_cases if c["split"] == split] for split in SPLITS
+    }
 
     print(f"Cases: {len(cases)} | min_score={rag.MIN_SCORE} k={rag.TOP_K}\n")
-    print(f"{'':3} {'expected':16} {'returned':34} query")
+    print(f"{'':3} {'':5} {'expected':16} {'returned':34} query")
     for case in scored_cases:
         ids = retrieve(case["ranked"], rag.MIN_SCORE, rag.TOP_K)
         expected = case["expected"]
@@ -64,21 +74,32 @@ def main():
         best_id, best_score = case["ranked"][0]
         returned = ", ".join(ids) if ids else f"(none; best {best_id} {best_score:.2f})"
         print(
-            f"{'✅' if ok else '❌':3} {expected or '(no answer)':16} {returned:34} {case['query']}"
+            f"{'✅' if ok else '❌':3} {case['split']:5} {expected or '(no answer)':16} "
+            f"{returned:34} {case['query']}"
         )
 
-    summary = measure(scored_cases, rag.MIN_SCORE, rag.TOP_K)
-    print(f"\nSummary: {summary}")
+    summary = {
+        split: measure(by_split[split], rag.MIN_SCORE, rag.TOP_K) for split in SPLITS
+    }
+    print()
+    for split in SPLITS:
+        print(f"Summary ({split}): {summary[split]}")
 
     print("\nWhat other minimum scores would cost (same k):")
-    print(f"{'min_score':>9}  {'found':>7}  {'top 1':>7}  {'rejected':>8}")
+    print(f"{'':9}  {'dev':^17}  {'test':^17}")
+    print(
+        f"{'min_score':>9}  {'found':>7}  {'rejected':>8}  {'found':>7}  {'rejected':>8}"
+    )
     sweep = {}
-    for min_score in [0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6]:
-        row = measure(scored_cases, min_score, rag.TOP_K)
-        sweep[str(min_score)] = row
+    for min_score in MIN_SCORES:
+        rows = {
+            split: measure(by_split[split], min_score, rag.TOP_K) for split in SPLITS
+        }
+        sweep[str(min_score)] = rows
         mark = "  <- current" if min_score == rag.MIN_SCORE else ""
         print(
-            f"{min_score:>9}  {row['found']:>7}  {row['top_1']:>7}  {row['rejected']:>8}{mark}"
+            f"{min_score:>9}  {rows['dev']['found']:>7}  {rows['dev']['rejected']:>8}  "
+            f"{rows['test']['found']:>7}  {rows['test']['rejected']:>8}{mark}"
         )
 
     out = EVALS_DIR / "results" / "retrieval.json"
@@ -93,6 +114,7 @@ def main():
                 "cases": [
                     {
                         "query": c["query"],
+                        "split": c["split"],
                         "expected": c["expected"],
                         "returned": retrieve(c["ranked"], rag.MIN_SCORE, rag.TOP_K),
                         "best": [c["ranked"][0][0], round(c["ranked"][0][1], 3)],

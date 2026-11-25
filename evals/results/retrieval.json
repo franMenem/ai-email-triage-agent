@@ -2,60 +2,131 @@
  "min_score": 0.4,
  "k": 3,
  "summary": {
-  "found": "19/22",
-  "top_1": "19/22",
-  "rejected": "7/10"
- },
- "sweep": {
-  "0.2": {
-   "found": "22/22",
-   "top_1": "20/22",
-   "rejected": "4/10"
-  },
-  "0.25": {
-   "found": "20/22",
-   "top_1": "20/22",
-   "rejected": "5/10"
-  },
-  "0.3": {
-   "found": "20/22",
-   "top_1": "20/22",
-   "rejected": "6/10"
-  },
-  "0.35": {
-   "found": "20/22",
-   "top_1": "20/22",
-   "rejected": "6/10"
-  },
-  "0.4": {
+  "dev": {
    "found": "19/22",
    "top_1": "19/22",
    "rejected": "7/10"
   },
+  "test": {
+   "found": "14/16",
+   "top_1": "14/16",
+   "rejected": "6/8"
+  }
+ },
+ "sweep": {
+  "0.2": {
+   "dev": {
+    "found": "22/22",
+    "top_1": "20/22",
+    "rejected": "4/10"
+   },
+   "test": {
+    "found": "15/16",
+    "top_1": "14/16",
+    "rejected": "2/8"
+   }
+  },
+  "0.25": {
+   "dev": {
+    "found": "20/22",
+    "top_1": "20/22",
+    "rejected": "5/10"
+   },
+   "test": {
+    "found": "15/16",
+    "top_1": "14/16",
+    "rejected": "3/8"
+   }
+  },
+  "0.3": {
+   "dev": {
+    "found": "20/22",
+    "top_1": "20/22",
+    "rejected": "6/10"
+   },
+   "test": {
+    "found": "14/16",
+    "top_1": "14/16",
+    "rejected": "4/8"
+   }
+  },
+  "0.35": {
+   "dev": {
+    "found": "20/22",
+    "top_1": "20/22",
+    "rejected": "6/10"
+   },
+   "test": {
+    "found": "14/16",
+    "top_1": "14/16",
+    "rejected": "5/8"
+   }
+  },
+  "0.4": {
+   "dev": {
+    "found": "19/22",
+    "top_1": "19/22",
+    "rejected": "7/10"
+   },
+   "test": {
+    "found": "14/16",
+    "top_1": "14/16",
+    "rejected": "6/8"
+   }
+  },
   "0.45": {
-   "found": "19/22",
-   "top_1": "19/22",
-   "rejected": "8/10"
+   "dev": {
+    "found": "19/22",
+    "top_1": "19/22",
+    "rejected": "8/10"
+   },
+   "test": {
+    "found": "12/16",
+    "top_1": "12/16",
+    "rejected": "6/8"
+   }
   },
   "0.5": {
-   "found": "16/22",
-   "top_1": "16/22",
-   "rejected": "9/10"
+   "dev": {
+    "found": "16/22",
+    "top_1": "16/22",
+    "rejected": "9/10"
+   },
+   "test": {
+    "found": "11/16",
+    "top_1": "11/16",
+    "rejected": "6/8"
+   }
   },
   "0.55": {
-   "found": "13/22",
-   "top_1": "13/22",
-   "rejected": "10/10"
+   "dev": {
+    "found": "13/22",
+    "top_1": "13/22",
+    "rejected": "10/10"
+   },
+   "test": {
+    "found": "8/16",
+    "top_1": "8/16",
+    "rejected": "7/8"
+   }
   },
   "0.6": {
-   "found": "12/22",
-   "top_1": "12/22",
-   "rejected": "10/10"
+   "dev": {
+    "found": "12/22",
+    "top_1": "12/22",
+    "rejected": "10/10"
+   },
+   "test": {
+    "found": "6/16",
+    "top_1": "6/16",
+    "rejected": "7/8"
+   }
   }
  },
  "cases": [
   {
    "query": "Are you open on Saturdays?",
+   "split": "dev",
    "expected": "opening_hours",
    "returned": [
     "opening_hours"
@@ -67,6 +138,7 @@
   },
   {
    "query": "¿Atienden los sábados?",
+   "split": "dev",
    "expected": "opening_hours",
    "returned": [
     "opening_hours"
@@ -78,6 +150,7 @@
   },
   {
    "query": "What time does customer support close?",
+   "split": "dev",
    "expected": "opening_hours",
    "returned": [
     "opening_hours",
@@ -90,6 +163,7 @@
   },
   {
    "query": "¿Hasta qué hora puedo llamarlos?",
+   "split": "dev",
    "expected": "opening_hours",
    "returned": [
     "opening_hours"
@@ -101,6 +175,7 @@
   },
   {
    "query": "Where is my package right now?",
+   "split": "dev",
    "expected": "order_tracking",
    "returned": [],
    "best": [
@@ -110,6 +185,7 @@
   },
   {
    "query": "How can I track my order?",
+   "split": "dev",
    "expected": "order_tracking",
    "returned": [
     "order_tracking"
@@ -121,6 +197,7 @@
   },
   {
    "query": "¿Dónde puedo ver el seguimiento de mi pedido?",
+   "split": "dev",
    "expected": "order_tracking",
    "returned": [
     "order_tracking",
@@ -133,6 +210,7 @@
   },
   {
    "query": "Necesito factura con el CUIT de mi empresa",
+   "split": "dev",
    "expected": "invoices",
    "returned": [
     "invoices"
@@ -144,6 +222,7 @@
   },
   {
    "query": "I didn't get the invoice for my purchase",
+   "split": "dev",
    "expected": "invoices",
    "returned": [],
    "best": [
@@ -153,6 +232,7 @@
   },
   {
    "query": "Can I get an invoice with my company tax ID?",
+   "split": "dev",
    "expected": "invoices",
    "returned": [
     "invoices"
@@ -164,6 +244,7 @@
   },
   {
    "query": "Do gift cards expire?",
+   "split": "dev",
    "expected": "gift_cards",
    "returned": [
     "gift_cards",
@@ -176,6 +257,7 @@
   },
   {
    "query": "¿Puedo canjear una gift card por plata?",
+   "split": "dev",
    "expected": "gift_cards",
    "returned": [
     "gift_cards"
@@ -187,6 +269,7 @@
   },
   {
    "query": "What amounts can I buy a gift card for?",
+   "split": "dev",
    "expected": "gift_cards",
    "returned": [
     "gift_cards",
@@ -199,6 +282,7 @@
   },
   {
    "query": "¿Cuándo vuelve a haber stock?",
+   "split": "dev",
    "expected": "stock",
    "returned": [
     "stock"
@@ -210,6 +294,7 @@
   },
   {
    "query": "The jacket I want is sold out, will you restock it?",
+   "split": "dev",
    "expected": "stock",
    "returned": [
     "stock"
@@ -221,6 +306,7 @@
   },
   {
    "query": "Precio por mayor para 50 unidades",
+   "split": "dev",
    "expected": "wholesale",
    "returned": [
     "wholesale"
@@ -232,6 +318,7 @@
   },
   {
    "query": "Do you offer discounts for bulk orders?",
+   "split": "dev",
    "expected": "wholesale",
    "returned": [
     "wholesale",
@@ -244,6 +331,7 @@
   },
   {
    "query": "¿Tienen local a la calle?",
+   "split": "dev",
    "expected": "physical_stores",
    "returned": [],
    "best": [
@@ -253,6 +341,7 @@
   },
   {
    "query": "Do you have a store I can visit?",
+   "split": "dev",
    "expected": "physical_stores",
    "returned": [
     "physical_stores",
@@ -265,6 +354,7 @@
   },
   {
    "query": "¿Puedo pasar a ver los productos en persona?",
+   "split": "dev",
    "expected": "physical_stores",
    "returned": [
     "physical_stores"
@@ -276,6 +366,7 @@
   },
   {
    "query": "I forgot my password",
+   "split": "dev",
    "expected": "account",
    "returned": [
     "account"
@@ -287,6 +378,7 @@
   },
   {
    "query": "¿Cómo cambio el mail de mi cuenta?",
+   "split": "dev",
    "expected": "account",
    "returned": [
     "account"
@@ -298,6 +390,7 @@
   },
   {
    "query": "Can I pay in installments?",
+   "split": "dev",
    "expected": null,
    "returned": [
     "gift_cards",
@@ -310,6 +403,7 @@
   },
   {
    "query": "Do you sell motorcycle parts?",
+   "split": "dev",
    "expected": null,
    "returned": [
     "wholesale"
@@ -321,6 +415,7 @@
   },
   {
    "query": "I want to work with you, are you hiring?",
+   "split": "dev",
    "expected": null,
    "returned": [],
    "best": [
@@ -330,6 +425,7 @@
   },
   {
    "query": "¿Cuál es la capital de Francia?",
+   "split": "dev",
    "expected": null,
    "returned": [],
    "best": [
@@ -339,6 +435,7 @@
   },
   {
    "query": "Happy birthday!",
+   "split": "dev",
    "expected": null,
    "returned": [],
    "best": [
@@ -348,6 +445,7 @@
   },
   {
    "query": "hola",
+   "split": "dev",
    "expected": null,
    "returned": [],
    "best": [
@@ -357,6 +455,7 @@
   },
   {
    "query": "¿Hacen envíos a Uruguay?",
+   "split": "dev",
    "expected": null,
    "returned": [],
    "best": [
@@ -366,6 +465,7 @@
   },
   {
    "query": "Is this backpack waterproof?",
+   "split": "dev",
    "expected": null,
    "returned": [],
    "best": [
@@ -375,6 +475,7 @@
   },
   {
    "query": "Can you sponsor my podcast?",
+   "split": "dev",
    "expected": null,
    "returned": [],
    "best": [
@@ -384,6 +485,7 @@
   },
   {
    "query": "My order arrived broken, I want a refund",
+   "split": "dev",
    "expected": null,
    "returned": [
     "stock",
@@ -392,6 +494,288 @@
    "best": [
     "stock",
     0.511
+   ]
+  },
+  {
+   "query": "Is support available on public holidays?",
+   "split": "test",
+   "expected": "opening_hours",
+   "returned": [
+    "opening_hours"
+   ],
+   "best": [
+    "opening_hours",
+    0.556
+   ]
+  },
+  {
+   "query": "¿Trabajan los domingos?",
+   "split": "test",
+   "expected": "opening_hours",
+   "returned": [
+    "opening_hours"
+   ],
+   "best": [
+    "opening_hours",
+    0.447
+   ]
+  },
+  {
+   "query": "Is there a page where I can follow my delivery?",
+   "split": "test",
+   "expected": "order_tracking",
+   "returned": [
+    "order_tracking"
+   ],
+   "best": [
+    "order_tracking",
+    0.486
+   ]
+  },
+  {
+   "query": "¿Cada cuánto se actualiza el seguimiento del envío?",
+   "split": "test",
+   "expected": "order_tracking",
+   "returned": [
+    "order_tracking",
+    "stock",
+    "invoices"
+   ],
+   "best": [
+    "order_tracking",
+    0.566
+   ]
+  },
+  {
+   "query": "When will I receive the invoice?",
+   "split": "test",
+   "expected": "invoices",
+   "returned": [
+    "invoices",
+    "stock"
+   ],
+   "best": [
+    "invoices",
+    0.729
+   ]
+  },
+  {
+   "query": "¿Me pueden mandar la factura por mail?",
+   "split": "test",
+   "expected": "invoices",
+   "returned": [
+    "invoices",
+    "gift_cards",
+    "stock"
+   ],
+   "best": [
+    "invoices",
+    0.532
+   ]
+  },
+  {
+   "query": "How long is a gift card valid?",
+   "split": "test",
+   "expected": "gift_cards",
+   "returned": [
+    "gift_cards",
+    "stock",
+    "invoices"
+   ],
+   "best": [
+    "gift_cards",
+    0.77
+   ]
+  },
+  {
+   "query": "Quiero regalar una gift card de 50 dólares",
+   "split": "test",
+   "expected": "gift_cards",
+   "returned": [
+    "gift_cards"
+   ],
+   "best": [
+    "gift_cards",
+    0.623
+   ]
+  },
+  {
+   "query": "Can you email me when the sneakers are back in stock?",
+   "split": "test",
+   "expected": "stock",
+   "returned": [
+    "stock"
+   ],
+   "best": [
+    "stock",
+    0.52
+   ]
+  },
+  {
+   "query": "¿Cuánto tardan en reponer un producto agotado?",
+   "split": "test",
+   "expected": "stock",
+   "returned": [
+    "stock"
+   ],
+   "best": [
+    "stock",
+    0.616
+   ]
+  },
+  {
+   "query": "We need 30 backpacks for our company, is there a special price?",
+   "split": "test",
+   "expected": "wholesale",
+   "returned": [
+    "wholesale"
+   ],
+   "best": [
+    "wholesale",
+    0.521
+   ]
+  },
+  {
+   "query": "¿Venden por mayor?",
+   "split": "test",
+   "expected": "wholesale",
+   "returned": [],
+   "best": [
+    "stock",
+    0.226
+   ]
+  },
+  {
+   "query": "Where is your showroom?",
+   "split": "test",
+   "expected": "physical_stores",
+   "returned": [
+    "physical_stores"
+   ],
+   "best": [
+    "physical_stores",
+    0.412
+   ]
+  },
+  {
+   "query": "¿Tienen sucursales?",
+   "split": "test",
+   "expected": "physical_stores",
+   "returned": [],
+   "best": [
+    "opening_hours",
+    0.395
+   ]
+  },
+  {
+   "query": "How do I reset my password?",
+   "split": "test",
+   "expected": "account",
+   "returned": [
+    "account"
+   ],
+   "best": [
+    "account",
+    0.776
+   ]
+  },
+  {
+   "query": "No puedo entrar a mi cuenta, olvidé la contraseña",
+   "split": "test",
+   "expected": "account",
+   "returned": [
+    "account"
+   ],
+   "best": [
+    "account",
+    0.752
+   ]
+  },
+  {
+   "query": "What's the weather like today?",
+   "split": "test",
+   "expected": null,
+   "returned": [],
+   "best": [
+    "opening_hours",
+    0.198
+   ]
+  },
+  {
+   "query": "¿Me recomendás una película?",
+   "split": "test",
+   "expected": null,
+   "returned": [],
+   "best": [
+    "stock",
+    0.083
+   ]
+  },
+  {
+   "query": "Do you ship to Brazil?",
+   "split": "test",
+   "expected": null,
+   "returned": [],
+   "best": [
+    "wholesale",
+    0.226
+   ]
+  },
+  {
+   "query": "¿Las zapatillas vienen en talle 45?",
+   "split": "test",
+   "expected": null,
+   "returned": [],
+   "best": [
+    "wholesale",
+    0.273
+   ]
+  },
+  {
+   "query": "I was charged twice for my order",
+   "split": "test",
+   "expected": null,
+   "returned": [],
+   "best": [
+    "stock",
+    0.342
+   ]
+  },
+  {
+   "query": "Can I return a product after 40 days?",
+   "split": "test",
+   "expected": null,
+   "returned": [
+    "stock",
+    "invoices",
+    "gift_cards"
+   ],
+   "best": [
+    "stock",
+    0.606
+   ]
+  },
+  {
+   "query": "¿Tienen garantía los productos?",
+   "split": "test",
+   "expected": null,
+   "returned": [
+    "wholesale",
+    "stock"
+   ],
+   "best": [
+    "wholesale",
+    0.518
+   ]
+  },
+  {
+   "query": "Please unsubscribe me from your newsletter",
+   "split": "test",
+   "expected": null,
+   "returned": [],
+   "best": [
+    "account",
+    0.369
    ]
   }
  ]
