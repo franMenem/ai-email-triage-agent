@@ -6,6 +6,18 @@ An AI agent that reads incoming client emails, classifies them and leaves a read
 
 Works with **Gmail / Google Workspace, Outlook / Microsoft 365, and any IMAP mailbox** (iCloud, Yahoo, AOL, Zoho, GMX, Proton…). Built with Python and Claude (Anthropic API). I use it every day with my own freelance clients.
 
+> **Highlights**
+> - **In production:** deployed on FastAPI Cloud with Gmail push notifications; I use it every day with my own clients.
+> - **LLM engineering:** tool calling against a database, structured outputs (Pydantic), whole-thread context, 3 mail providers behind one interface.
+> - **RAG, measured:** FAQ search over embeddings as a tool, with the similarity threshold chosen from a labeled set of queries, not by feel: the right document comes back for 19 of 22 answerable questions.
+> - **Evals, not vibes:** 22 cases (normal, angry, multilingual, prompt-injection attacks) run across Opus, Sonnet and Haiku; all pass 22/22, so Haiku is the default for cost and speed.
+> - **Security by design:** a human approves every draft, the code cannot send email, authorization lives in code (not in the prompt), tested against prompt injection and SQL injection.
+> - **Tested:** pytest with fakes for the LLM and every mailbox, running in GitHub Actions on each push.
+
+<!-- Demo GIF: uncomment once docs/demo.gif exists
+![Demo: an email arrives and the draft appears in the thread](docs/demo.gif)
+-->
+
 ## How it works
 
 ```
@@ -32,6 +44,7 @@ There is no state file: an email is skipped once its thread has a draft written 
 | `prompts.py`, `profiles.py` | System prompts, and which prompt + tools each profile uses |
 | `drafter.py` | Talks to Claude: prompt, tool-calling loop, structured output |
 | `tools.py`, `db.py` | The tools Claude can call, and the only file that knows where the data lives |
+| `rag.py`, `data/faq.json` | FAQ search: embeddings, cosine similarity, minimum score and maximum number of documents |
 | `mail_core.py` | Provider-independent rules: which email still needs a reply, automated-mail detection, HTML to text, quotes, reply building |
 | `gmail_client.py` + `gmail_parsing.py` | `GmailInbox`: Gmail API (read, draft, watch) |
 | `outlook_client.py` | `OutlookInbox`: Microsoft Graph (read, draft, subscription) |
@@ -87,7 +100,7 @@ Each profile has its own system prompt and tools, and is chosen with `--profile`
 | Profile | Use | Tools |
 |---|---|---|
 | `freelance` (default) | Replies to my own clients. Never promises dates, prices or availability: it leaves gaps like `[fill in: available times]` for me to fill in. | — |
-| `store` | Demo: customer support for an online store, answering from its database. | `find_order` (orders), `find_policy` (returns, shipping, payments…) |
+| `store` | Demo: customer support for an online store, answering from its database. | `find_order` (orders), `find_policy` (returns, shipping, payments…), `search_docs` (FAQ search) |
 
 ## Answers from your own data
 
@@ -110,6 +123,49 @@ and drafts a reply using only those two results, noting in the internal notes wh
 4. **Enable it:** add the tool to a profile in `profiles.py` and mention it in that profile's prompt.
 
 The drafting loop in `drafter.py` doesn't change: it runs whatever tool Claude asks for.
+
+## Answers from documents (RAG)
+
+Tables cover orders and policies. For everything else a store gets asked (opening hours, invoices, gift cards, stock, wholesale, the customer's account) there is a small FAQ in `data/faq.json`, and the `search_docs` tool finds the documents that answer a question **by meaning, not by words**: *"¿Atienden los sábados?"* finds the English document about opening hours.
+
+```
+FAQ documents ──> embedding model ──> one vector per document (the index, built once)
+
+customer question ──> Claude calls search_docs("...") ──> vector of the query
+                                                             │
+                              cosine similarity against every document
+                                                             │
+                     keep score >= 0.40, at most 3, best first ──> texts back to Claude
+```
+
+It's written by hand in `rag.py` (about 100 lines, no vector database, no framework) so every step can be read and tested. The embedding model is `paraphrase-multilingual-mpnet-base-v2`, running locally with sentence-transformers.
+
+**Two numbers decide what Claude sees, and both were chosen by measuring.** Similarity search always returns *something* close, which is not the same as something correct, so a document needs a minimum score to be shown at all. `evals/retrieval_cases.json` has 32 labeled queries in English and Spanish: 22 that a FAQ document answers and 10 that none does. This is what each minimum score costs:
+
+| Minimum score | Right document returned | Unanswerable query gets nothing |
+|---|---|---|
+| 0.30 | 20/22 | 6/10 |
+| **0.40** (current) | **19/22** | **7/10** |
+| 0.50 | 16/22 | 9/10 |
+| 0.60 | 12/22 | 10/10 |
+
+No value gets both columns right, so the threshold is not the only defense:
+
+| Layer | What it does |
+|---|---|
+| Tool description | Tells Claude which questions belong to `find_order` and `find_policy`, so it doesn't search the FAQ for them |
+| Minimum score and maximum count | Decided in code. Claude only sends the query: an email can't talk the model into lowering the threshold or dumping every document |
+| Prompt | "Use a document only if it actually answers the question"; otherwise the draft says the team will look into it |
+| Human review | Every draft is read before it's sent |
+
+**What it gets wrong today.** Three answerable queries don't get their document: *"Where is my package right now?"*, *"¿Tienen local a la calle?"* and one that scores 0.39, just under the threshold. Three unanswerable ones get documents anyway, for example *"Can I pay in installments?"* returns the gift-card document. The thresholds only hold for this embedding model: with another one they have to be measured again.
+
+```bash
+uv sync --group rag                                     # the embedding model, about 1 GB, only needed for this
+uv run --group rag python -m evals.run_retrieval_evals  # free: no Claude calls
+```
+
+The model lives in an optional dependency group and loads on first use, so the rest of the agent and almost all the tests run without it. For now the FAQ search runs locally only: the deployed server doesn't have the model.
 
 ## Security by design
 
@@ -171,7 +227,7 @@ Gmail access (one time):
 1. In [Google Cloud Console](https://console.cloud.google.com), create a project and enable the **Gmail API**.
 2. Configure the OAuth consent screen as **External**, in testing mode, and add your address under **Test users**.
 3. Create an OAuth client of type **Desktop app**, download the JSON and save it as `credentials.json` in this folder.
-4. In Gmail, create the label `agente` and a filter that applies it to the senders you want the agent to handle (the label name is `AGENT_LABEL` in `gmail_client.py`).
+4. In Gmail, create the label `agente` and a filter that applies it to the senders you want the agent to handle (to use another label name, set `AGENT_FILTER`).
 
 The first run opens the browser to grant access (read email + create drafts) and saves `token.json`.
 
@@ -182,6 +238,7 @@ uv run --env-file .env python process_inbox.py                  # freelance prof
 uv run --env-file .env python process_inbox.py --every 5        # keeps running, checks every 5 minutes
 uv run --env-file .env python process_inbox.py --profile store # store demo
 uv run --env-file .env python -m evals.run_evals                # evals (paid API calls)
+uv run --group rag python -m evals.run_retrieval_evals          # FAQ search evals (free, local model)
 ```
 
 There is also a FastAPI endpoint (`POST /emails`) that drafts a reply for an email sent as JSON, used for the store demo and the tests:
@@ -226,6 +283,11 @@ uv run pytest
 | `tests/test_webhook.py` | Webhooks, `/process` and renewal: a wrong token never reaches the mailbox, Outlook validation handshake and clientState, token hidden in logs |
 | `tests/test_imap.py` | `ImapInbox` against a fake IMAP server: the whole cycle (pending, draft, not pending, the client writes again), folders by flag, all-mail mode |
 | `tests/test_outlook.py` | `OutlookInbox` against a fake Microsoft Graph: pending, thread, draft, subscription created then renewed |
+| `tests/test_rag.py` | FAQ search with hand-made vectors (no model): similarity, ranking, ties, minimum score, maximum count. Five more tests use the real model and are skipped without the `rag` group |
+| `tests/test_search_docs_tool.py` | The `search_docs` tool: Claude can't change the limits, the email body is never searched, errors aren't reported as "no documents", the model isn't loaded at startup |
+| `tests/test_gaps_*.py` | Written after a mutation audit (below): the drafting loop, permissions, webhooks, automated-mail detection, and the three mail clients |
+
+**Mutation audit.** To check the tests themselves, the code was broken on purpose in 253 small ways, one at a time (a condition flipped, a permission check removed, an error swallowed). The original suite noticed 92 of them. The 115 tests in `tests/test_gaps_*.py` catch 154 of the 161 that got through. They pin today's behavior; the bugs the audit found along the way are tracked in the roadmap.
 
 ## Evals
 
@@ -250,7 +312,7 @@ Compare a model with `--model claude-sonnet-5-5`. Next steps: harder cases, and 
 
 ## Stack
 
-Python 3.12 · Anthropic SDK (Claude, tool calling, structured outputs) · Gmail API · Microsoft Graph (MSAL) · IMAP · SQLite · FastAPI · Pydantic · pytest · GitHub Actions · FastAPI Cloud · uv
+Python 3.12 · Anthropic SDK (Claude, tool calling, structured outputs) · sentence-transformers (embeddings) · Gmail API · Microsoft Graph (MSAL) · IMAP · SQLite · FastAPI · Pydantic · pytest · GitHub Actions · FastAPI Cloud · uv
 
 ## Roadmap
 
@@ -267,8 +329,12 @@ Python 3.12 · Anthropic SDK (Claude, tool calling, structured outputs) · Gmail
 - [x] Gmail push notifications (`watch` + Pub/Sub) to a webhook
 - [x] Deployed on FastAPI Cloud, with a daily watch renewal and auto-deploy on push
 - [x] Outlook / Microsoft 365 and IMAP mailboxes, chosen with `MAIL_PROVIDER`
+- [x] Documents/FAQ search (RAG) for questions that aren't in a table, with retrieval evals
+- [x] Mutation audit of the test suite
+- [ ] FAQ search on the deployed server (embeddings through an API, or vectors computed ahead of time)
+- [ ] Better retrieval: hybrid search (terms + embeddings) and a vector database
+- [ ] Fix the bugs the audit found: Outlook pagination, non-object webhook payloads, case-sensitive order lookup, no cap on tool-calling rounds
 - [ ] LLM judge for draft quality, and tracing
-- [ ] Documents/FAQ search (RAG) for questions that aren't in a table
 - [ ] Ready-made profiles per industry: law firms, accountants, online courses, sales teams
 - [ ] Small web page to review, edit and approve drafts before they go to Gmail
 - [ ] Attachments: read PDFs and images that come with an email
