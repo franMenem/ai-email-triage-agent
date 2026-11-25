@@ -40,16 +40,16 @@ There is no state file: an email is skipped once its thread has a draft written 
 
 | File | Responsibility |
 |---|---|
-| `models.py` | `Email` and `Draft` (Pydantic). The JSON schema Claude must follow is generated from `Draft`. |
-| `prompts.py`, `profiles.py` | System prompts, and which prompt + tools each profile uses |
-| `drafter.py` | Talks to Claude: prompt, tool-calling loop, structured output |
-| `tools.py`, `db.py` | The tools Claude can call, and the only file that knows where the data lives |
-| `rag.py`, `data/faq.json` | FAQ search: embeddings, cosine similarity, minimum score and maximum number of documents |
-| `mail_core.py` | Provider-independent rules: which email still needs a reply, automated-mail detection, HTML to text, quotes, reply building |
-| `gmail_client.py` + `gmail_parsing.py` | `GmailInbox`: Gmail API (read, draft, watch) |
-| `outlook_client.py` | `OutlookInbox`: Microsoft Graph (read, draft, subscription) |
-| `imap_client.py` | `ImapInbox`: IMAP (read, draft in the Drafts folder) |
-| `inboxes.py` | Picks the mailbox with `MAIL_PROVIDER` |
+| `agent/models.py` | `Email` and `Draft` (Pydantic). The JSON schema Claude must follow is generated from `Draft`. |
+| `agent/prompts.py`, `agent/profiles.py` | System prompts, and which prompt + tools each profile uses |
+| `agent/drafter.py` | Talks to Claude: prompt, tool-calling loop, structured output |
+| `agent/tools.py`, `agent/db.py` | The tools Claude can call, and the only file that knows where the data lives |
+| `agent/rag.py`, `data/faq.json` | FAQ search: embeddings, cosine similarity, minimum score and maximum number of documents |
+| `agent/mail/core.py` | Provider-independent rules: which email still needs a reply, automated-mail detection, HTML to text, quotes, reply building |
+| `agent/mail/gmail_client.py` + `agent/mail/gmail_parsing.py` | `GmailInbox`: Gmail API (read, draft, watch) |
+| `agent/mail/outlook_client.py` | `OutlookInbox`: Microsoft Graph (read, draft, subscription) |
+| `agent/mail/imap_client.py` | `ImapInbox`: IMAP (read, draft in the Drafts folder) |
+| `agent/mail/inboxes.py` | Picks the mailbox with `MAIL_PROVIDER` |
 | `process_inbox.py` | The flow: pending emails -> Claude -> drafts. Depends on an `Inbox` protocol, not on any provider |
 | `main.py` | FastAPI: `/emails`, `/gmail-webhook`, `/outlook-webhook`, `/process`, `/renew-watch` |
 
@@ -77,7 +77,7 @@ To make the agent ignore a thread, remove its label / category / folder (deletin
 1. In [Microsoft Entra](https://entra.microsoft.com) -> App registrations -> New registration. Supported account types: *any organizational directory and personal Microsoft accounts*.
 2. Authentication -> **Allow public client flows: Yes**.
 3. API permissions -> Microsoft Graph -> Delegated: `Mail.ReadWrite`, `User.Read`. (`Mail.Send` is not requested: the app can't send email.)
-4. `MS_CLIENT_ID=<Application (client) ID>` and run `uv run python outlook_client.py --login` (device code: enter the code at microsoft.com/devicelogin). It saves `ms_token.json`; on a server, its contents go in `MS_TOKEN_CACHE`.
+4. `MS_CLIENT_ID=<Application (client) ID>` and run `uv run python -m agent.mail.outlook_client --login` (device code: enter the code at microsoft.com/devicelogin). It saves `ms_token.json`; on a server, its contents go in `MS_TOKEN_CACHE`.
 5. In Outlook, a rule that adds the category `agente` to your clients' emails.
 6. With the server deployed and `PUBLIC_URL` set, `POST /renew-watch` creates the subscription (and the daily cron keeps it alive).
 </details>
@@ -95,7 +95,7 @@ Sent and Drafts folders are found by their standard flags (`\Sent`, `\Drafts`), 
 
 ## Profiles
 
-Each profile has its own system prompt and tools, and is chosen with `--profile`. A new use case is a new entry in `profiles.py`, without touching the drafting code.
+Each profile has its own system prompt and tools, and is chosen with `--profile`. A new use case is a new entry in `agent/profiles.py`, without touching the drafting code.
 
 | Profile | Use | Tools |
 |---|---|---|
@@ -104,7 +104,7 @@ Each profile has its own system prompt and tools, and is chosen with `--profile`
 
 ## Answers from your own data
 
-The agent doesn't answer from memory: it calls **tools** that query a database, and only replies with what they return. The `store` profile ships with a sample SQLite database (`db.py`, created automatically from `data/orders.csv`) with orders and store policies.
+The agent doesn't answer from memory: it calls **tools** that query a database, and only replies with what they return. The `store` profile ships with a sample SQLite database (`agent/db.py`, created automatically from `data/orders.csv`) with orders and store policies.
 
 Example: a customer asks *"When do the sneakers from order 1002 arrive? And if they don't fit, how do I return them?"*. Claude decides on its own to call:
 
@@ -117,12 +117,12 @@ and drafts a reply using only those two results, noting in the internal notes wh
 
 ### Connect your own database
 
-1. **Connection:** change `connect_db()` in `db.py` to your database (Postgres, Supabase, MySQL…). It's the only file that knows where the data lives.
-2. **Query:** add a function in `tools.py` with a parameterized query (`?` placeholders, never f-strings, so there's no SQL injection). Decide permissions **here, in code**: for example, filter by `email.sender` so a customer can only see their own records.
+1. **Connection:** change `connect_db()` in `agent/db.py` to your database (Postgres, Supabase, MySQL…). It's the only file that knows where the data lives.
+2. **Query:** add a function in `agent/tools.py` with a parameterized query (`?` placeholders, never f-strings, so there's no SQL injection). Decide permissions **here, in code**: for example, filter by `email.sender` so a customer can only see their own records.
 3. **Describe it to Claude:** add its definition (`TOOL_...`: name, when to use it, input schema) and register the function in `EXECUTORS`.
-4. **Enable it:** add the tool to a profile in `profiles.py` and mention it in that profile's prompt.
+4. **Enable it:** add the tool to a profile in `agent/profiles.py` and mention it in that profile's prompt.
 
-The drafting loop in `drafter.py` doesn't change: it runs whatever tool Claude asks for.
+The drafting loop in `agent/drafter.py` doesn't change: it runs whatever tool Claude asks for.
 
 ## Answers from documents (RAG)
 
@@ -138,7 +138,7 @@ customer question ──> Claude calls search_docs("...") ──> vector of the 
                      keep score >= 0.40, at most 3, best first ──> texts back to Claude
 ```
 
-It's written by hand in `rag.py` (about 100 lines, no vector database, no framework) so every step can be read and tested. The embedding model is `paraphrase-multilingual-mpnet-base-v2`, running locally with sentence-transformers.
+It's written by hand in `agent/rag.py` (about 100 lines, no vector database, no framework) so every step can be read and tested. The embedding model is `paraphrase-multilingual-mpnet-base-v2`, running locally with sentence-transformers.
 
 **Two numbers decide what Claude sees, and both were chosen by measuring.** Similarity search always returns *something* close, which is not the same as something correct, so a document needs a minimum score to be shown at all. `evals/retrieval_cases.json` has 32 labeled queries in English and Spanish: 22 that a FAQ document answers and 10 that none does. This is what each minimum score costs:
 
@@ -173,11 +173,11 @@ The system prompt is treated as public: it will leak sooner or later, so nothing
 
 | Layer | Where |
 |---|---|
-| A human approves every reply. The code has no function that sends email. | `gmail_client.py` |
-| Authorization in code: `find_order` only returns an order if the order number **and** the sender match, whatever the model asks for. | `tools.py` |
-| Read-only tools with parameterized SQL queries (tested against SQL injection). | `tools.py` |
-| The email is wrapped in `<email>` tags and treated as untrusted data, not instructions. | `drafter.py` + prompt |
-| Defensive prompt: no revealing instructions, no data from other clients, flag manipulation attempts with `ALERT:`. | `prompts.py` |
+| A human approves every reply. The code has no function that sends email. | `agent/mail/gmail_client.py` |
+| Authorization in code: `find_order` only returns an order if the order number **and** the sender match, whatever the model asks for. | `agent/tools.py` |
+| Read-only tools with parameterized SQL queries (tested against SQL injection). | `agent/tools.py` |
+| The email is wrapped in `<email>` tags and treated as untrusted data, not instructions. | `agent/drafter.py` + prompt |
+| Defensive prompt: no revealing instructions, no data from other clients, flag manipulation attempts with `ALERT:`. | `agent/prompts.py` |
 | Secrets (`.env`, `credentials.json`, `token.json`) are never committed. | `.gitignore` |
 
 ### Demo: prompt-injection test
@@ -258,7 +258,7 @@ email gets the "agente" label ──> Gmail watch ──> Pub/Sub topic ──> 
                                                                     (answers 204 at once, works in the background)
 ```
 
-- `uv run python gmail_client.py --watch` starts the Gmail watch (`start_watch`). It lasts 7 days, so a GitHub Actions cron (`.github/workflows/renew-watch.yml`) calls `POST /renew-watch` every day.
+- `uv run python -m agent.mail.gmail_client --watch` starts the Gmail watch (`start_watch`). It lasts 7 days, so a GitHub Actions cron (`.github/workflows/renew-watch.yml`) calls `POST /renew-watch` every day.
 - `POST /gmail-webhook` answers Pub/Sub right away and runs the same processing as `process_inbox.py` in the background. A lock keeps two notifications from processing at the same time, and duplicated notifications are harmless because emails that already have a draft are skipped.
 - Both endpoints are public URLs, so they require `?token=<WEBHOOK_TOKEN>` and refuse everything if it isn't configured. The token is replaced with `***` in the access logs. (A stricter option is Pub/Sub's OIDC authentication, verifying Google's signed token.)
 - On a server, the Gmail login comes from the `GMAIL_TOKEN_JSON` environment variable instead of `token.json`.
