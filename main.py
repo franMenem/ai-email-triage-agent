@@ -74,6 +74,7 @@ async def receive(email: Email):
             return {
                 "status": "received",
                 "message_id": email.message_id,
+                "needs_reply": draft.needs_reply,
                 "draft": draft.draft,
                 "internal_notes": draft.internal_notes,
                 "intent": draft.intent,

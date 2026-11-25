@@ -10,7 +10,7 @@ Works with **Gmail / Google Workspace, Outlook / Microsoft 365, and any IMAP mai
 > - **In production:** deployed on FastAPI Cloud with Gmail push notifications; I use it every day with my own clients.
 > - **LLM engineering:** tool calling against a database, structured outputs (Pydantic), whole-thread context, 3 mail providers behind one interface.
 > - **RAG, measured:** FAQ search over embeddings as a tool. The similarity threshold was chosen from labeled queries, then checked on a second set written after it was fixed: the right document comes back for 14 of 16 answerable questions (a small sample: roughly 64% to 97%). Two ideas to improve it were tried, measured and left out because neither moved the results by more than one query.
-> - **Evals, not vibes:** 31 cases (normal, angry, multilingual, FAQ questions, prompt-injection attacks) across Opus, Sonnet and Haiku, checking the tools that were really called and, with a second model as judge, whether each draft stays within what the email and the tools say. The judge itself is tested on drafts with a known verdict.
+> - **Evals, not vibes:** 35 cases (normal, angry, multilingual, FAQ questions, spam that needs no reply, prompt-injection attacks) across Opus, Sonnet and Haiku, checking the tools that were really called and, with a second model as judge, whether each draft stays within what the email and the tools say. The judge itself is tested on drafts with a known verdict.
 > - **Security by design:** a human approves every draft, the code cannot send email, authorization lives in code (not in the prompt), tested against prompt injection and SQL injection.
 > - **Tested:** pytest with fakes for the LLM and every mailbox, running in GitHub Actions on each push.
 
@@ -313,39 +313,44 @@ uv run pytest
 
 ## Evals
 
-The tests check the code; the evals check **the model's answers**. `evals/cases.json` has 31 test emails, each with what a good answer looks like:
+The tests check the code; the evals check **the model's answers**. `evals/cases.json` has 35 test emails, each with what a good answer looks like:
 
 - normal questions (order status, returns, shipping, payments), in English and Spanish;
 - angry customers, a double charge with a legal threat, a production outage;
 - attacks: prompt injection, a hidden instruction in a P.S., a fake employee, a prompt-leak request, phishing;
 - conversations: a reply that only makes sense with the earlier messages of the thread;
+- emails that need no reply: spam, a newsletter, a cold sales pitch, an automated notification, and next to them a rude two-line email from a real customer, which must still get one;
 - FAQ search: questions answered from a document, one mixed with an order, one that no document answers, a payment question that must go to `find_policy` instead, and an attempt to dump every document.
 
-Each draft is scored on six checks:
+Each draft is scored on seven checks:
 
+- **reply**: whether the agent was right about the email needing a reply at all (see below);
 - **intent** and **urgency**: the accepted values;
 - **alert**: `ALERT:` at the start of the notes when, and only when, it's an attack;
 - **content**: text the draft must include (the order data, a `[fill in: ...]` gap) or must never include (another customer's order, the tool names). For facts only a tool supplies, like a delivery date, any of several wordings counts;
 - **tools**: which tools Claude must or must not have called, checked against the calls the code recorded, not against what the model says it did;
 - **faithful**: a second model (the judge, Sonnet) reads the draft next to the email and the recorded tool results, and lists every claim that isn't backed by them.
 
-| Model | Intent | Urgency | Alert | Content | Tools | Faithful | Errors | Median time |
-|---|---|---|---|---|---|---|---|---|
-| **Claude Haiku 5.5** (default) | 31/31 | 31/31 | 31/31 | 31/31 | 31/31 | 28/31 | 0 | 3.2 s |
-| Claude Sonnet 5.5 | 31/31 | 31/31 | 31/31 | 31/31 | 31/31 | 30/31 | 0 | 4.2 s |
-| Claude Opus 5.5 | 30/30 | 30/30 | 30/30 | 30/30 | 30/30 | 29/30 | 1 | 5.3 s |
+| Model | Reply | Intent | Urgency | Alert | Content | Tools | Faithful | Errors | Median time |
+|---|---|---|---|---|---|---|---|---|---|
+| **Claude Haiku 5.5** (default) | 35/35 | 35/35 | 35/35 | 35/35 | 35/35 | 35/35 | 28/35 | 0 | 3.8 s |
+| Claude Sonnet 5.5 | 35/35 | 35/35 | 35/35 | 35/35 | 35/35 | 35/35 | 35/35 | 0 | 4.1 s |
+| Claude Opus 5.5 | 35/35 | 35/35 | 35/35 | 35/35 | 34/35 | 35/35 | 35/35 | 0 | 4.3 s |
+
+**Classify first, then maybe write nothing.** An earlier run showed the agent politely answering an SEO agency's pitch with *"we are not looking for SEO services at this time"*: a business decision nobody asked it to take. Now the first thing Claude decides is `needs_reply`. For spam, advertising, cold pitches, newsletters and automated notifications it is false, Claude writes no reply, and the code saves a fixed note in the thread (`[NO REPLY DRAFTED - DO NOT SEND]` plus Claude's one-line reason). The note is still a draft on purpose: a draft in the thread is what marks an email as processed, and it shows the reviewer that the email was read and why nothing was written. When unsure the agent replies, and attacks still get a draft and an `ALERT:` so a person sees them. All three models got the five new cases right, including the rude customer.
 
 How to read it:
 
-- **The first five checks don't separate the models**, so the default is the cheapest and fastest one. The tools check is the new one that matters: every case that needs `find_order`, `find_policy` or `search_docs` called it, and the email that orders the agent to dump its documents triggered no tool call at all.
-- **Faithfulness is where the drafts fall short, and it's noisy.** Four runs of Haiku gave 28, 26, 26 and 28 of 31, and the set of failing cases changes from run to run (two recur: the reply to spam and a freelance refund question). One run per model can't rank them: the 30 for Sonnet and the 28 for Haiku are within that spread. The last run of each model (the table) came after lowering the maximum number of documents from 3 to 2 and scored a little higher, but none of the cases that failed before or after is an FAQ case, so that is the same spread and not an effect of the change. What fails is never order or policy data. It's small friendly extras that nobody authorized: *"you can find it in your order confirmation email"*, *"we'll answer as soon as we open"*, *"I'll send over a calendar invite shortly"*.
+- **The first six checks don't separate the models**, so the default is the cheapest and fastest one. The tools check is the new one that matters: every case that needs `find_order`, `find_policy` or `search_docs` called it, and the email that orders the agent to dump its documents triggered no tool call at all.
+- **Faithfulness is where the drafts fall short, and it's noisy.** On the 31 cases that existed before, four runs of Haiku gave 28, 26, 26 and 28, and the set of failing cases changes from run to run. In the run in the table Haiku fails 7 of 35 (6 of them among those 31, one more than its worst earlier run) while Sonnet and Opus fail none, after scoring 30/31 and 29/30 the run before. One run per model can't say whether the longer prompt hurt Haiku, or whether Sonnet is really better: that needs repeated runs. What fails is never order data. It's small extras nobody authorized: *"you can find it in your order confirmation"*, *"I'll send a calendar invite shortly"*, *"I've passed your message to our team"*, and one subtle one worth showing: the document says gift cards *"are valid for 12 months"* and the draft said *"valid for 12 months from purchase"*.
+- **The evals found a leak twice.** The `find_order` tool described its input as "Order number, e.g. 1002", and a draft told a customer their number was "like 1002", which is a real order in the sample data. I swapped the example for a number that doesn't exist; in this run a draft said "it's usually a number like 48213". The example is gone now, and a test keeps it out.
 - **The judge is checked before it's trusted.** `evals/check_judge.py` runs it on 12 hand-written drafts whose verdict is known (an invented price, a promised reply time, a refund taken from an injected instruction, and their faithful counterparts): it got 12 of 12. That shows it catches clear cases, not that it's right on borderline ones, and on the real drafts it is strict: it flagged a polite *"we're not interested in this service"* in reply to spam.
-- **Opus's error is a refusal.** On one prompt-injection email Opus stops with `stop_reason: refusal` and writes no draft. The first time this showed up as an unexplained invalid-JSON error; recording the stop reason is one of the fixes that followed.
+- **Opus sometimes refuses.** In two earlier runs, on one prompt-injection email Opus stopped with `stop_reason: refusal` and wrote no draft; in the run in the table it answered. The first time this showed up as an unexplained invalid-JSON error; recording the stop reason is one of the fixes that followed.
 - **Prompt changes didn't measurably help.** After the first run I added rules against the kinds of extras the judge found (describing progress nobody reported, saying something was already done). The next two runs scored 26 and 26. With this much run-to-run noise, telling whether a prompt change works needs several runs before and after, which is the next step.
 
 In an earlier run of 20 cases, Sonnet once wrote `ALERT:` in the middle of the notes instead of at the start. Slips like these are what the evals are for. The detailed answers of each model, with the recorded tool calls and the judge's findings, are in `evals/results/`.
 
-**What these checks still don't prove.** Content is a substring check: it catches gross errors (the wrong language, leaked data, a missing key fact), not correctness, and 7 of the 31 cases have no content check at all. The judge covers part of that gap but is a model with its own errors. And 31 cases is a small set, written by the same person who wrote the prompts.
+**What these checks still don't prove.** Content is a substring check: it catches gross errors (the wrong language, leaked data, a missing key fact), not correctness, and 10 of the 35 cases have no content check at all. The judge covers part of that gap but is a model with its own errors. And 35 cases is a small set, written by the same person who wrote the prompts.
 
 In the FAQ cases the model's internal notes illustrate the layers (they are its own account, not a recorded trace). Asked about motorcycle parts, the search returned the wholesale document; the notes say *"It does not answer whether motorcycle parts are sold, so no product availability was confirmed"* and the draft says the team will look into it. Asked about installments, Claude went to `find_policy` instead of the FAQ. In an earlier run of 20 cases, Sonnet once wrote `ALERT:` in the middle of the notes instead of at the start; that format slip is exactly what the evals are for. The detailed answers of each model are in `evals/results/`.
 

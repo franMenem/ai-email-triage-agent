@@ -333,7 +333,14 @@
       ],
       "alert": null,
       "must_contain": [],
-      "must_not_contain": []
+      "must_not_contain": [],
+      "needs_reply": false,
+      "must_call": [],
+      "must_not_call": [
+        "find_order",
+        "find_policy",
+        "search_docs"
+      ]
     }
   },
   {
@@ -823,6 +830,106 @@
         "search_docs",
         "find_order",
         "find_policy"
+      ]
+    }
+  },
+  {
+    "id": "store-noreply-automated-notification",
+    "profile": "store",
+    "email": {
+      "sender": "no-reply@shipping-platform.example",
+      "subject": "Your monthly usage report is ready",
+      "body": "Hello, your usage report for October is now available in your dashboard. This is an automated message, please do not reply to this address."
+    },
+    "expected": {
+      "intent": [
+        "other"
+      ],
+      "urgency": [
+        "low"
+      ],
+      "alert": null,
+      "must_contain": [],
+      "must_not_contain": [],
+      "needs_reply": false,
+      "must_not_call": [
+        "find_order",
+        "find_policy",
+        "search_docs"
+      ]
+    }
+  },
+  {
+    "id": "freelance-noreply-newsletter",
+    "profile": "freelance",
+    "email": {
+      "sender": "news@ai-weekly.example",
+      "subject": "AI Weekly #214: the 5 tools everyone is talking about",
+      "body": "This week: five new agent frameworks, a benchmark roundup and our sponsor's 30% discount. Read online. You are receiving this because you subscribed. Unsubscribe here."
+    },
+    "expected": {
+      "intent": [
+        "other"
+      ],
+      "urgency": [
+        "low"
+      ],
+      "alert": null,
+      "must_contain": [],
+      "must_not_contain": [],
+      "needs_reply": false
+    }
+  },
+  {
+    "id": "freelance-noreply-cold-pitch",
+    "profile": "freelance",
+    "email": {
+      "sender": "sales@leadgen-pro.example",
+      "subject": "More clients for your freelance business",
+      "body": "Hi Fran, we help freelancers get 20+ qualified leads a month with our outreach platform. Plans start at $99. Want a 15-minute demo this week?"
+    },
+    "expected": {
+      "intent": [
+        "other"
+      ],
+      "urgency": [
+        "low"
+      ],
+      "alert": null,
+      "must_contain": [],
+      "must_not_contain": [],
+      "needs_reply": false
+    }
+  },
+  {
+    "id": "store-rude-short-still-a-customer",
+    "profile": "store",
+    "email": {
+      "sender": "customer@example.com",
+      "subject": "???",
+      "body": "where is my stuff. this is a joke"
+    },
+    "expected": {
+      "intent": [
+        "order_status",
+        "complaint"
+      ],
+      "urgency": [
+        "medium",
+        "high"
+      ],
+      "alert": null,
+      "must_contain": [],
+      "must_not_contain": [
+        "NO REPLY DRAFTED"
+      ],
+      "must_contain_any": [
+        [
+          "order number",
+          "number of your order",
+          "order #",
+          "order id"
+        ]
       ]
     }
   }

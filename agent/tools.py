@@ -55,7 +55,12 @@ TOOL_FIND_ORDER = {
     "input_schema": {
         "type": "object",
         "properties": {
-            "order_id": {"type": "string", "description": "Order number, e.g. 48213"}
+            # No example number here: Claude quoted the example to a customer as if it
+            # were a fact ("it's usually a number like ..."), twice, with two examples
+            "order_id": {
+                "type": "string",
+                "description": "The order number exactly as the customer wrote it",
+            }
         },
         "required": ["order_id"],
     },

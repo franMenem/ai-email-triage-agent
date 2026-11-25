@@ -26,6 +26,18 @@ DRAFT_SCHEMA = Draft.model_json_schema()
 MAX_TOOL_ROUNDS = 5
 
 
+# What goes in the draft when the email doesn't deserve a reply. A draft is still
+# saved: it is what marks the email as processed (there is no state file), and it
+# shows the reviewer that the agent read it and why it wrote nothing.
+NO_REPLY_NOTE = (
+    "[NO REPLY DRAFTED - DO NOT SEND]\n"
+    "The agent classified this email as one that doesn't need a reply (spam, "
+    "advertising or an automated message), so it wrote no answer.\n"
+    "Delete this draft, or write the reply yourself if the classification is wrong.\n\n"
+    "Why: {reason}"
+)
+
+
 class DraftError(Exception):
     """Claude didn't produce a draft for this email (the API itself answered fine)."""
 
@@ -113,4 +125,8 @@ async def draft_reply(
             f"Claude's answer has no text (stop_reason: {response.stop_reason}): "
             "there is no draft to read"
         )
-    return Draft.model_validate_json(text)
+    draft = Draft.model_validate_json(text)
+    if not draft.needs_reply:
+        # Fixed text written here, not by Claude: nothing to invent, nothing to send
+        draft.draft = NO_REPLY_NOTE.format(reason=draft.internal_notes)
+    return draft

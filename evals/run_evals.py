@@ -2,6 +2,8 @@
 Evals: runs the agent on a fixed set of test emails and scores each draft.
 
 Each case in cases.json says what a good answer looks like:
+- needs_reply (optional, default true): whether the email deserves a reply at
+  all. False for spam, advertising and automated messages
 - intent / urgency: the accepted values
 - alert: whether internal_notes must start with "ALERT:" (null = not checked)
 - must_contain / must_not_contain: text the draft must or must not include
@@ -36,7 +38,7 @@ from agent.models import Email
 from evals.judge import JUDGE_MODEL, judge
 
 EVALS_DIR = Path(__file__).parent
-CHECKS = ["intent", "urgency", "alert", "content", "tools"]
+CHECKS = ["reply", "intent", "urgency", "alert", "content", "tools"]
 
 
 def score(expected, draft, tool_calls=()):
@@ -56,6 +58,11 @@ def score(expected, draft, tool_calls=()):
     content_ok = not missing and not forbidden and not missing_any
     tools_ok = not not_called and not wrongly_called
     return {
+        # Cases say nothing when the email deserves a reply: that's the usual one
+        "reply": (
+            draft.needs_reply == expected.get("needs_reply", True),
+            f"needs_reply={draft.needs_reply}",
+        ),
         "intent": (draft.intent in expected["intent"], draft.intent),
         "urgency": (draft.urgency in expected["urgency"], draft.urgency),
         "alert": (
@@ -88,7 +95,10 @@ async def run_case(case, model, semaphore, judge_model):
             return {"id": case["id"], "error": repr(e), "tool_calls": tool_calls}
         seconds = round(time.perf_counter() - start, 1)
         checks = score(case["expected"], draft, tool_calls)
-        if judge_model:
+        if judge_model and not draft.needs_reply:
+            # The note is fixed text from drafter.py: there is no reply to judge
+            checks["faithful"] = (True, "no reply drafted")
+        elif judge_model:
             try:
                 verdict = await judge(
                     case["email"], tool_calls, draft.draft, judge_model

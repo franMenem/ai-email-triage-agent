@@ -41,6 +41,7 @@ def test_valid_email_is_received():
     assert response.json() == {
         "status": "received",
         "message_id": "abc-1",
+        "needs_reply": True,
         "draft": "TEST DRAFT",
         "internal_notes": "TEST NOTES",
         "intent": "complaint",

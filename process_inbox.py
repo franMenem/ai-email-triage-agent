@@ -60,7 +60,10 @@ async def process_new_emails(profile, inbox: Inbox, draft_fn=draft_reply):
 
         print(f"  Intent: {draft.intent} | Urgency: {draft.urgency}")
         print(f"  Internal notes: {draft.internal_notes}")
-        print("  ✅ Draft created")
+        if draft.needs_reply:
+            print("  ✅ Draft created")
+        else:
+            print("  ⏭️  No reply needed: a note was saved instead of a draft")
 
 
 async def watch(profile, minutes):
