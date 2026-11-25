@@ -157,6 +157,17 @@ class OutlookInbox:
         response.raise_for_status()
         return response.json()
 
+    def _get_all(self, path, params):
+        """Every item of a Graph list. Graph answers one page at a time and, while
+        there are more, gives the URL of the next one in @odata.nextLink (a full
+        URL that already carries the query, so it's requested as it comes)."""
+        data = self._get(path, params=params)
+        items = list(data.get("value", []))
+        while next_link := data.get("@odata.nextLink"):
+            data = self._get(next_link)
+            items += data.get("value", [])
+        return items
+
     def _recent_ids(self):
         """Conversation IDs of the recent emails the agent handles, without repeats."""
         since = (
@@ -170,23 +181,22 @@ class OutlookInbox:
         else:
             path = "/me/messages"
             query = f"receivedDateTime ge {since} and categories/any(c:c eq '{self._filter}')"
-        data = self._get(
+        recent = self._get_all(
             path, params={"$filter": query, "$select": "conversationId", "$top": "100"}
         )
         # Each conversation once, in the order Graph listed them (dict.fromkeys keeps
         # it; a set would give a different order on every run)
-        return list(dict.fromkeys(m["conversationId"] for m in data.get("value", [])))
+        return list(dict.fromkeys(m["conversationId"] for m in recent))
 
     def _conversation(self, conversation_id):
         """The messages of a conversation, remembered for read_email."""
-        data = self._get(
+        messages = self._get_all(
             "/me/messages",
             params={
                 "$filter": f"conversationId eq '{conversation_id}'",
                 "$select": "id,receivedDateTime,lastModifiedDateTime,isDraft,from,subject",
             },
         )
-        messages = data.get("value", [])
         for m in messages:
             self._conversations[m["id"]] = messages
         return messages

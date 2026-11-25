@@ -19,6 +19,7 @@ import agent
 import main
 import process_inbox
 from agent import drafter
+from agent.mail import gmail_client
 from agent.mail.outlook_client import OutlookInbox, graph_headers
 from agent.models import Draft, Email
 from agent.tools import find_order, run_tool
@@ -627,3 +628,106 @@ def test_outlook_read_email_brings_the_thread_without_a_list_pending_before():
         "The thread must not depend on having called list_pending first"
     )
     assert fresh.read_email("other").thread == "", "A first email has no thread"
+
+
+# ------------------------------------ 11. lists longer than one page of the API
+def test_outlook_follows_the_pages_of_a_long_conversation():
+    graph = FakeGraph(
+        [
+            omsg("m1", "2026-11-04T10:00:00Z", "mark@x.com"),
+            omsg("m2", "2026-11-04T10:10:00Z", ME),
+            omsg("m3", "2026-11-04T10:20:00Z", "mark@x.com"),
+            omsg("m4", "2026-11-04T10:30:00Z", ME),
+            omsg("m5", "2026-11-04T10:40:00Z", "mark@x.com"),
+        ],
+        page_size=2,
+    )
+    inbox = outlook(graph)
+    assert inbox.list_pending() == ["m5"], (
+        "Reading only the first page (m1, m2), the thread looks answered"
+    )
+    thread = inbox.read_email("m5").thread
+    assert [f"text of m{i}" in thread for i in (1, 2, 3, 4)] == [True] * 4
+    assert outlook(graph).read_email("m5").thread == thread, "Also without the cache"
+
+
+@pytest.mark.parametrize("filter_value", ["agente", "*"])
+def test_outlook_follows_the_pages_of_the_recent_emails(filter_value):
+    names = ["c1", "c2", "c3", "c4", "c5"]
+    graph = FakeGraph(
+        [omsg(f"m-{c}", "2026-11-04T10:00:00Z", "mark@x.com", c) for c in names],
+        page_size=2,
+    )
+    assert outlook(graph, filter_value).list_pending() == [f"m-{c}" for c in names]
+    listings = [
+        params
+        for _, path, params in graph.requests
+        if path.endswith("/messages")
+        and "conversationId eq" not in params.get("$filter", "")
+    ]
+    assert [p.get("$skiptoken") for p in listings] == [None, "2", "4"]
+    assert all(p["$filter"] == listings[0]["$filter"] for p in listings), (
+        "The next pages keep the filter (it travels inside @odata.nextLink)"
+    )
+
+
+class _Call:
+    def __init__(self, result):
+        self._result = result
+
+    def execute(self):
+        return self._result
+
+
+class PagedGmail:
+    """A fake Gmail service whose threads.list answers `page_size` threads at a time,
+    with nextPageToken while there are more (the token is where the next page starts)."""
+
+    def __init__(self, thread_ids, page_size):
+        self.thread_ids, self.page_size = thread_ids, page_size
+        self.list_calls = []
+
+    def users(self):
+        return self
+
+    threads = messages = users
+
+    def list(self, userId, q=None, pageToken=None):
+        self.list_calls.append({"q": q, "pageToken": pageToken})
+        start = int(pageToken or 0)
+        end = start + self.page_size
+        page = {"threads": [{"id": t} for t in self.thread_ids[start:end]]}
+        if end < len(self.thread_ids):
+            page["nextPageToken"] = str(end)
+        return _Call(page)
+
+    def get(self, userId, id, format=None, metadataHeaders=None):
+        message = {"id": f"m-{id}", "internalDate": "1000", "labelIds": ["INBOX"]}
+        return _Call({"id": id, "messages": [message]})
+
+
+def test_gmail_follows_the_pages_of_the_thread_list(monkeypatch):
+    monkeypatch.setattr(gmail_client, "AGENT_LABEL", "agente")
+    fake = PagedGmail(["t1", "t2", "t3", "t4", "t5"], page_size=2)
+    assert gmail_client.GmailInbox(fake).list_pending() == [
+        "m-t1",
+        "m-t2",
+        "m-t3",
+        "m-t4",
+        "m-t5",
+    ]
+    assert fake.list_calls == [
+        {"q": "label:agente newer_than:7d", "pageToken": None},
+        {"q": "label:agente newer_than:7d", "pageToken": "2"},
+        {"q": "label:agente newer_than:7d", "pageToken": "4"},
+    ]
+
+
+def test_gmail_with_a_single_page_or_no_threads_asks_once(monkeypatch):
+    monkeypatch.setattr(gmail_client, "AGENT_LABEL", "agente")
+    one_page = PagedGmail(["t1", "t2"], page_size=100)
+    assert gmail_client.GmailInbox(one_page).list_pending() == ["m-t1", "m-t2"]
+    assert len(one_page.list_calls) == 1
+    empty = PagedGmail([], page_size=100)
+    assert gmail_client.GmailInbox(empty).list_pending() == []
+    assert len(empty.list_calls) == 1

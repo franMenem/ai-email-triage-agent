@@ -106,7 +106,14 @@ class GmailInbox:
             query = f"in:inbox category:primary newer_than:{PENDING_MAX_DAYS}d"
         else:
             query = f"label:{AGENT_LABEL} newer_than:{PENDING_MAX_DAYS}d"
-        threads = self._threads.list(userId="me", q=query).execute().get("threads", [])
+        # threads.list answers one page at a time: while there are more threads it
+        # gives a nextPageToken, which is sent back as pageToken to get the next page
+        threads = []
+        page = self._threads.list(userId="me", q=query).execute()
+        threads += page.get("threads", [])
+        while token := page.get("nextPageToken"):
+            page = self._threads.list(userId="me", q=query, pageToken=token).execute()
+            threads += page.get("threads", [])
         pending = []
         for t in threads:
             thread = self._threads.get(
