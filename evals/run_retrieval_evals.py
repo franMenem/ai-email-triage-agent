@@ -10,10 +10,15 @@ The cases come in two groups:
 - test: written afterwards and never used to choose anything. A change only
   counts as an improvement if it also holds here
 
-Three numbers per group, with the settings the tool uses:
+The numbers per group, with the settings the tool uses:
 - found: of the queries that have an answer, how many get their document back
 - top 1: of those same queries, how many get it in first place
-- rejected: of the queries with no answer, how many get no documents at all
+- only_right: of those same queries, how many get that document and nothing else
+- precision: of all the documents returned for them, how many are the right one
+- rejected: of the queries with no answer, how many get no documents at all.
+  Split in two, because they behave in opposite ways: rejected_none (nothing in
+  the store answers it) and rejected_policy (a store policy does, so the right
+  tool is find_policy, not this search)
 
 It also prints the same numbers for other minimum scores, to show what each
 choice costs.
@@ -41,17 +46,27 @@ def measure(scored_cases, min_score, k):
     """Counts found / top 1 / rejected for one choice of min_score and k."""
     with_answer = [c for c in scored_cases if c["expected"] is not None]
     without_answer = [c for c in scored_cases if c["expected"] is None]
-    found = top_1 = rejected = 0
+    found = top_1 = only_right = returned = rejected = 0
     for case in with_answer:
         ids = retrieve(case["ranked"], min_score, k)
         found += case["expected"] in ids
         top_1 += ids[:1] == [case["expected"]]
+        only_right += ids == [case["expected"]]
+        returned += len(ids)
+    by_kind = {"none": [0, 0], "policy": [0, 0]}
     for case in without_answer:
-        rejected += retrieve(case["ranked"], min_score, k) == []
+        empty = retrieve(case["ranked"], min_score, k) == []
+        rejected += empty
+        by_kind[case["kind"]][0] += empty
+        by_kind[case["kind"]][1] += 1
     return {
         "found": f"{found}/{len(with_answer)}",
         "top_1": f"{top_1}/{len(with_answer)}",
+        "only_right": f"{only_right}/{len(with_answer)}",
+        "precision": f"{found}/{returned}",
         "rejected": f"{rejected}/{len(without_answer)}",
+        "rejected_none": "{}/{}".format(*by_kind["none"]),
+        "rejected_policy": "{}/{}".format(*by_kind["policy"]),
     }
 
 
@@ -84,6 +99,14 @@ def main():
     print()
     for split in SPLITS:
         print(f"Summary ({split}): {summary[split]}")
+
+    print("\nSame minimum score, other maximum counts (found, precision):")
+    for k in [1, 2, 3]:
+        rows = {split: measure(by_split[split], rag.MIN_SCORE, k) for split in SPLITS}
+        print(
+            f"k={k}  dev {rows['dev']['found']:>6} {rows['dev']['precision']:>6}"
+            f"   test {rows['test']['found']:>6} {rows['test']['precision']:>6}"
+        )
 
     print("\nWhat other minimum scores would cost (same k):")
     print(f"{'':9}  {'dev':^17}  {'test':^17}")

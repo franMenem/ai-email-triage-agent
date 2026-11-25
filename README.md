@@ -9,8 +9,8 @@ Works with **Gmail / Google Workspace, Outlook / Microsoft 365, and any IMAP mai
 > **Highlights**
 > - **In production:** deployed on FastAPI Cloud with Gmail push notifications; I use it every day with my own clients.
 > - **LLM engineering:** tool calling against a database, structured outputs (Pydantic), whole-thread context, 3 mail providers behind one interface.
-> - **RAG, measured:** FAQ search over embeddings as a tool, with the similarity threshold chosen from labeled queries, not by feel, and checked on a held-out set: the right document comes back for 14 of 16 answerable questions it had never seen. Two "improvements" were tried and dropped because they didn't hold there.
-> - **Evals, not vibes:** 31 cases (normal, angry, multilingual, FAQ questions, prompt-injection attacks) run across Opus, Sonnet and Haiku. Haiku and Sonnet pass 31/31, so Haiku is the default for cost and speed.
+> - **RAG, measured:** FAQ search over embeddings as a tool. The similarity threshold was chosen from labeled queries, then checked on a second set written after it was fixed: the right document comes back for 14 of 16 answerable questions (a small sample: roughly 64% to 97%). Two ideas to improve it were tried, measured and left out because neither moved the results by more than one query.
+> - **Evals, not vibes:** 31 cases (normal, angry, multilingual, FAQ questions, prompt-injection attacks) run across Opus, Sonnet and Haiku. On these checks no model is distinguishable from another, so the default is Haiku, the cheapest and fastest.
 > - **Security by design:** a human approves every draft, the code cannot send email, authorization lives in code (not in the prompt), tested against prompt injection and SQL injection.
 > - **Tested:** pytest with fakes for the LLM and every mailbox, running in GitHub Actions on each push.
 
@@ -140,7 +140,9 @@ customer question ──> Claude calls search_docs("...") ──> vector of the 
 
 It's written by hand in `agent/rag.py` (about 100 lines, no vector database, no framework) so every step can be read and tested. The embedding model is `paraphrase-multilingual-mpnet-base-v2`, running locally with sentence-transformers.
 
-**Two numbers decide what Claude sees, and both were chosen by measuring.** Similarity search always returns *something* close, which is not the same as something correct, so a document needs a minimum score to be shown at all. `evals/retrieval_cases.json` has 56 labeled queries in English and Spanish, some that a FAQ document answers and some that none does, in two groups: 32 looked at while choosing the numbers (*dev*) and 24 written afterwards and never used to choose anything (*test*). This is what each minimum score costs:
+**The minimum score was chosen by measuring.** Similarity search always returns *something* close, which is not the same as something correct, so a document needs a minimum score to be shown at all. `evals/retrieval_cases.json` has 56 labeled queries in English and Spanish, some that a FAQ document answers and some that none does, in two groups: 32 looked at while choosing the threshold (*dev*) and 24 written afterwards (*test*).
+
+**These are small numbers: one query moves a result.** With 16 answerable test queries, 14/16 means "somewhere between 64% and 97%". Read every comparison below with that in mind.
 
 | Minimum score | Dev: right document returned | Dev: unanswerable gets nothing | Test: right document returned | Test: unanswerable gets nothing |
 |---|---|---|---|---|
@@ -150,28 +152,33 @@ It's written by hand in `agent/rag.py` (about 100 lines, no vector database, no 
 | 0.50 | 16/22 | 9/10 | 11/16 | 6/8 |
 | 0.60 | 12/22 | 10/10 | 6/16 | 7/8 |
 
-The held-out group earned its place right away: on dev alone, 0.45 looks strictly better than 0.40 (same hits, one more rejection). On test it loses two right answers and rejects nothing extra, so 0.40 stays.
+How much to trust this:
+
+- 0.40 was fixed before the test queries existed, so 14/16 is an honest check of that value. Since then I've used the test group to turn down 0.45 and two experiments, so it now works as a validation set: the next change needs fresh queries, ideally real customer emails and not ones I wrote.
+- The two groups disagree about 0.45 (one more rejection on dev, two fewer hits on test). A two-query difference is noise, so I kept the value I already had. The threshold isn't pinned down to better than about ±0.05: three queries sit within 0.05 of it.
+- **The maximum count (3) is a cap, not a tuned value.** Whenever the right document passes the threshold it is ranked first, so a maximum of 1 finds exactly the same documents with less noise (of the documents returned for answerable queries, 14 of 21 are the right one on test with a maximum of 3; 14 of 14 with 1). It's left at 3 for emails that ask two things, which this set doesn't cover yet.
+- "Unanswerable" mixes two kinds of query that behave in opposite ways. Questions nothing in the store answers (the weather, motorcycle parts) get no documents 11 times out of 12. Questions a *policy* answers (returns, warranty, installments) get FAQ documents anyway 4 times out of 6, because the nearest FAQ text is still close.
 
 No value gets both columns right, so the threshold is not the only defense:
 
 | Layer | What it does |
 |---|---|
-| Tool description | Tells Claude which questions belong to `find_order` and `find_policy`, so it doesn't search the FAQ for them |
+| Tool description | Tells Claude which questions belong to `find_order` and `find_policy`, so it usually doesn't search the FAQ for them (in the saved runs it sometimes still does, and then ignores what comes back) |
 | Minimum score and maximum count | Decided in code. Claude only sends the query: an email can't talk the model into lowering the threshold or dumping every document |
 | Prompt | "Use a document only if it actually answers the question"; otherwise the draft says the team will look into it |
 | Human review | Every draft is read before it's sent |
 
-**What it gets wrong today.** Some answerable queries don't get their document, mostly short Spanish questions against English documents: *"¿Tienen local a la calle?"*, *"¿Venden por mayor?"*, *"¿Tienen sucursales?"*. And some unanswerable ones get documents anyway. Most of those are really policy questions (*"Can I return a product after 40 days?"* scores 0.61 against the out-of-stock document), which is why the tool description sends those to `find_policy` and the prompt tells Claude to use a document only if it answers. The thresholds only hold for this embedding model: with another one they have to be measured again.
+**What it gets wrong today.** Five answerable queries don't get their document. They are very short questions whose wording the model doesn't connect to the document: *"¿Venden por mayor?"*, *"¿Tienen sucursales?"*, *"¿Tienen local a la calle?"*. It isn't the language: they fail against Spanish translations of the documents too, while *"¿Tienen precios mayoristas?"* finds the English document easily. And policy questions pull in FAQ documents (*"Can I return a product after 40 days?"* scores 0.61 against the out-of-stock document), which is why the prompt tells Claude to use a document only if it answers. The thresholds only hold for this embedding model: with another one they have to be measured again.
 
-**Tried and dropped.** Both looked like obvious wins and neither survived the held-out queries, so neither is in the code:
+**Tried, measured and left out.** Both experiments are in `evals/experiments/`. Compared at the same minimum score (0.40):
 
-| Idea | Dev | Test | Verdict |
+| Idea | Dev | Test | What the numbers say |
 |---|---|---|---|
-| Baseline: embeddings only, minimum 0.40 | 19/22 found, 7/10 rejected | 14/16 found, 6/8 rejected | Kept |
-| Hybrid search: add a TF-IDF term-overlap bonus to the similarity | 20/22, 8/10 | 13/16, 6/8 at best | Better on dev, worse on test. With English documents and half the queries in Spanish there are few shared words to reward, and the bonus also lifts wrong documents |
-| Bilingual index: embed each document in English and Spanish, keep the higher score | 19/22, 8/10 | 13/16, 6/8 | No gain: the model is already multilingual, and Spanish text also scores higher against the wrong documents |
+| Baseline: embeddings only | 19/22 found, 7/10 rejected | 14/16 found, 6/8 rejected | |
+| Term-overlap bonus added to the similarity (a small weight) | 20/22, 7/10 | 14/16, 6/8 | One more dev query (a 0.39 pushed over the line), nothing on test. Larger weights start letting wrong documents through (test rejections drop to 5/8, then 4/8) |
+| Bilingual index: each document in English and Spanish, keep the higher score | 19/22, 7/10 | 14/16, 6/8 | Identical. At higher thresholds it keeps a query or two more than embeddings alone |
 
-With 56 queries these are small numbers and one query moves a result, which is exactly why a change has to win on both groups before it goes in. The likely real fix is not in the scoring: put the policies in the same index, so a returns question finds the returns policy instead of the nearest FAQ document.
+Neither is a measurable improvement at this sample size, so neither is worth the extra code yet. That is all this shows: the term bonus is a weighted word overlap, not BM25, and only 3 of the 18 answerable Spanish queries share any word with their English document, so it had little to work with. What I'd try next, on new queries: adding typical questions or synonyms to each document, a retrieval model trained for question-against-passage search, and putting the policies in the same index so a returns question can find the returns policy.
 
 ```bash
 uv sync --group rag                                     # the embedding model, about 1 GB, only needed for this
@@ -300,7 +307,7 @@ uv run pytest
 | `tests/test_search_docs_tool.py` | The `search_docs` tool: Claude can't change the limits, the email body is never searched, errors aren't reported as "no documents", the model isn't loaded at startup |
 | `tests/test_gaps_*.py` | Written after a mutation audit (below): the drafting loop, permissions, webhooks, automated-mail detection, and the three mail clients |
 
-**Mutation audit.** To check the tests themselves, the code was broken on purpose in 253 small ways, one at a time (a condition flipped, a permission check removed, an error swallowed). The original suite noticed 92 of them. The 115 tests in `tests/test_gaps_*.py` catch 154 of the 161 that got through. They pin today's behavior; the bugs the audit found along the way are tracked in the roadmap.
+**Mutation audit.** To check the tests themselves, the code was broken on purpose in 253 small ways, one at a time (a condition flipped, a permission check removed, an error swallowed). The original suite noticed 92 of them. The 115 tests in `tests/test_gaps_*.py` catch 154 of the 161 that got through. They pin today's behavior; the bugs the audit found along the way are tracked in the roadmap. Two caveats: the mutations were made by hand in a throwaway copy, so the list isn't in this repo and the numbers can't be re-run from it; and the new tests were written looking at those same mutations, so "154 of 161" measures how well they cover that list, not mutations in general.
 
 ## Evals
 
@@ -310,19 +317,21 @@ The tests check the code; the evals check **the model's answers**. `evals/cases.
 - angry customers, a double charge with a legal threat, a production outage;
 - attacks: prompt injection, a hidden instruction in a P.S., a fake employee, a prompt-leak request, phishing;
 - conversations: a reply that only makes sense with the earlier messages of the thread;
-- FAQ search: questions answered from a document, one mixed with an order, one that no document answers, one where the search returns the wrong documents and the answer is in a policy, and an attempt to dump every document.
+- FAQ search: questions answered from a document, one mixed with an order, one that no document answers, a payment question that must go to `find_policy` instead, and an attempt to dump every document.
 
 Each draft is scored on four checks: intent, urgency, `ALERT:` when (and only when) it's an attack, and content (text it must include, like the order data or a `[fill in: ...]` gap, and text it must never include, like another customer's order or the tool names).
 
-| Model | Intent | Urgency | Alert | Content | All checks | Avg time |
+| Model | Intent | Urgency | Alert | Content | Errors | Median time |
 |---|---|---|---|---|---|---|
-| **Claude Haiku 5.5** (default) | 31/31 | 31/31 | 31/31 | 31/31 | 31/31 | 5.9 s |
-| Claude Sonnet 5.5 | 31/31 | 31/31 | 31/31 | 31/31 | 31/31 | 6.7 s |
-| Claude Opus 5.5 | 30/31 | 30/31 | 30/31 | 30/31 | 30/31 | 6.7 s |
+| **Claude Haiku 5.5** (default) | 31/31 | 31/31 | 31/31 | 31/31 | 0 | 3.7 s |
+| Claude Sonnet 5.5 | 31/31 | 31/31 | 31/31 | 31/31 | 0 | 4.4 s |
+| Claude Opus 5.5 | 30/30 | 30/30 | 30/30 | 30/30 | 1 | 5.4 s |
 
-Haiku and Sonnet pass every case, so the default is the cheapest and fastest one. Opus failed one: on a prompt-injection email its answer came back cut off mid-sentence, so it wasn't valid JSON and no draft was produced. No draft was produced, and it exposed a real gap: the code didn't handle an incomplete answer with a clear error. In an earlier run of 20 cases, Sonnet once wrote `ALERT:` in the middle of the notes instead of at the start. Format slips like these are exactly what the evals are for. The times include loading the embedding model during the run; the detailed answers of each model are in `evals/results/`.
+One run per model, so 31/31 against 30/30 says nothing about which is better: on these checks they are indistinguishable, and the default is the cheapest and fastest. Opus's error: on a prompt-injection email its answer came back cut off mid-sentence, so it wasn't valid JSON and no draft was produced. The run didn't record why it stopped. In an earlier run of 20 cases, Sonnet once wrote `ALERT:` in the middle of the notes instead of at the start. Slips like these are what the evals are for. The detailed answers of each model are in `evals/results/`.
 
-In the FAQ cases the internal notes show the layers working. Asked about motorcycle parts, the search returned the wholesale document; the notes say *"It does not answer whether motorcycle parts are sold, so no product availability was confirmed"* and the draft says the team will look into it. Asked about installments, Claude went to `find_policy` instead of the FAQ. In an earlier run of 20 cases, Sonnet once wrote `ALERT:` in the middle of the notes instead of at the start; that format slip is exactly what the evals are for. The detailed answers of each model are in `evals/results/`.
+**What these checks do and don't prove.** They are substring checks, and they catch gross errors: the wrong language, leaked data, a missing key fact. They don't prove a draft is correct. 7 of the 31 cases have no content check at all, 3 don't check the alert, and the run doesn't record which tools were called, so "it used `find_order`" rests on the model's own notes. Reading the saved drafts turned up things that passed and shouldn't have: a project status that wasn't in the email, and a promise to reply "the next business day" that isn't in the FAQ. Closing that gap (recording tool calls, checking facts that only a tool can supply, a judge for faithfulness) is the next step.
+
+In the FAQ cases the model's internal notes illustrate the layers (they are its own account, not a recorded trace). Asked about motorcycle parts, the search returned the wholesale document; the notes say *"It does not answer whether motorcycle parts are sold, so no product availability was confirmed"* and the draft says the team will look into it. Asked about installments, Claude went to `find_policy` instead of the FAQ. In an earlier run of 20 cases, Sonnet once wrote `ALERT:` in the middle of the notes instead of at the start; that format slip is exactly what the evals are for. The detailed answers of each model are in `evals/results/`.
 
 Compare a model with `--model claude-sonnet-5-5`. Next steps: harder cases, and an LLM judge for tone and faithfulness, since the current checks don't score how good a draft reads.
 
@@ -348,7 +357,8 @@ Python 3.12 · Anthropic SDK (Claude, tool calling, structured outputs) · sente
 - [x] Documents/FAQ search (RAG) for questions that aren't in a table, with retrieval evals
 - [x] Mutation audit of the test suite
 - [ ] FAQ search on the deployed server (embeddings through an API, or vectors computed ahead of time)
-- [ ] Better retrieval: hybrid search (terms + embeddings) and a vector database
+- [ ] Better retrieval, measured on fresh queries: typical questions per document, a question-against-passage model, the policies in the same index; then a vector database
+- [ ] Stronger evals: record tool calls, check facts that only a tool supplies, more than one run per model
 - [ ] Fix the bugs the audit found: Outlook pagination, non-object webhook payloads, case-sensitive order lookup, no cap on tool-calling rounds
 - [ ] LLM judge for draft quality, and tracing
 - [ ] Ready-made profiles per industry: law firms, accountants, online courses, sales teams

@@ -1,6 +1,7 @@
 """Experiment (not used by the agent): does embedding each FAQ document in English and
-in Spanish, and keeping the higher score, find more documents? Result: no gain on the
-held-out queries, so it was dropped. See "Tried and dropped" in the README.
+in Spanish, and keeping the higher score, find more documents? Result: identical at the
+current minimum score (0.40) and a query or two better at higher ones. Not a measurable
+gain, so it isn't used. See "Tried and dropped" in the README.
 
 Run it with:
     uv run --group rag python -m evals.experiments.bilingual_index

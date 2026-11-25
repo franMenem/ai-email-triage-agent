@@ -1,6 +1,7 @@
 """Experiment (not used by the agent): does adding a TF-IDF term-overlap bonus to the
-embedding similarity find more documents? Result: better on dev, worse on test, so it
-was dropped. See "Tried and dropped" in the README.
+embedding similarity find more documents? Result: at the same minimum score, a small bonus
+adds one dev query and nothing on test, and larger bonuses let wrong documents through.
+Not a measurable gain, so it isn't used. It is a weighted term overlap, not BM25. See "Tried and dropped" in the README.
 
 Run it with:
     uv run --group rag python -m evals.experiments.hybrid_search
@@ -79,21 +80,14 @@ def measure(split, term_part, w, min_score, k=3):
 
 for stem in (False, True):
     tp = make(stem)
+    print(f"\n=== plural stripping={stem}   (found, rejected)")
     print(
-        f"\n=== stem={stem}   (dev: found/22 rejected/10 | test: found/16 rejected/8)"
+        "Compare each row with weight 0 AT THE SAME minimum score: that is the baseline."
     )
-    rows = []
-    for w in (0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4):
-        for m in (0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6):
+    for m in (0.4, 0.45):
+        for w in (0, 0.05, 0.1, 0.2, 0.3):
             f, na, r, nn = measure("dev", tp, w, m)
-            rows.append((f / na + r / nn, f, r, w, m))
-    rows.sort(reverse=True)
-    for bal, f, r, w, m in rows[:8]:
-        tf, tna, tr, tnn = measure("test", tp, w, m)
-        print(
-            f"w={w:<5} min={m:<5} dev {f}/22 {r}/10  bal={bal:.3f} | test {tf}/{tna} {tr}/{tnn}"
-        )
-    for w, m in ((0, 0.4), (0, 0.45)):
-        f, na, r, nn = measure("dev", tp, w, m)
-        tf, tna, tr, tnn = measure("test", tp, w, m)
-        print(f"BASE w={w} min={m}: dev {f}/{na} {r}/{nn} | test {tf}/{tna} {tr}/{tnn}")
+            tf, tna, tr, tnn = measure("test", tp, w, m)
+            print(
+                f"min={m:<5} weight={w:<5} dev {f}/{na} {r}/{nn} | test {tf}/{tna} {tr}/{tnn}"
+            )

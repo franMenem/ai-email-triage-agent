@@ -5,12 +5,20 @@
   "dev": {
    "found": "19/22",
    "top_1": "19/22",
-   "rejected": "7/10"
+   "only_right": "13/22",
+   "precision": "19/25",
+   "rejected": "7/10",
+   "rejected_none": "6/7",
+   "rejected_policy": "1/3"
   },
   "test": {
    "found": "14/16",
    "top_1": "14/16",
-   "rejected": "6/8"
+   "only_right": "10/16",
+   "precision": "14/21",
+   "rejected": "6/8",
+   "rejected_none": "5/5",
+   "rejected_policy": "1/3"
   }
  },
  "sweep": {
@@ -18,108 +26,180 @@
    "dev": {
     "found": "22/22",
     "top_1": "20/22",
-    "rejected": "4/10"
+    "only_right": "0/22",
+    "precision": "22/65",
+    "rejected": "4/10",
+    "rejected_none": "4/7",
+    "rejected_policy": "0/3"
    },
    "test": {
     "found": "15/16",
     "top_1": "14/16",
-    "rejected": "2/8"
+    "only_right": "1/16",
+    "precision": "15/43",
+    "rejected": "2/8",
+    "rejected_none": "2/5",
+    "rejected_policy": "0/3"
    }
   },
   "0.25": {
    "dev": {
     "found": "20/22",
     "top_1": "20/22",
-    "rejected": "5/10"
+    "only_right": "1/22",
+    "precision": "20/57",
+    "rejected": "5/10",
+    "rejected_none": "5/7",
+    "rejected_policy": "0/3"
    },
    "test": {
     "found": "15/16",
     "top_1": "14/16",
-    "rejected": "3/8"
+    "only_right": "3/16",
+    "precision": "15/37",
+    "rejected": "3/8",
+    "rejected_none": "2/5",
+    "rejected_policy": "1/3"
    }
   },
   "0.3": {
    "dev": {
     "found": "20/22",
     "top_1": "20/22",
-    "rejected": "6/10"
+    "only_right": "5/22",
+    "precision": "20/47",
+    "rejected": "6/10",
+    "rejected_none": "6/7",
+    "rejected_policy": "0/3"
    },
    "test": {
     "found": "14/16",
     "top_1": "14/16",
-    "rejected": "4/8"
+    "only_right": "3/16",
+    "precision": "14/34",
+    "rejected": "4/8",
+    "rejected_none": "3/5",
+    "rejected_policy": "1/3"
    }
   },
   "0.35": {
    "dev": {
     "found": "20/22",
     "top_1": "20/22",
-    "rejected": "6/10"
+    "only_right": "9/22",
+    "precision": "20/38",
+    "rejected": "6/10",
+    "rejected_none": "6/7",
+    "rejected_policy": "0/3"
    },
    "test": {
     "found": "14/16",
     "top_1": "14/16",
-    "rejected": "5/8"
+    "only_right": "7/16",
+    "precision": "14/27",
+    "rejected": "5/8",
+    "rejected_none": "4/5",
+    "rejected_policy": "1/3"
    }
   },
   "0.4": {
    "dev": {
     "found": "19/22",
     "top_1": "19/22",
-    "rejected": "7/10"
+    "only_right": "13/22",
+    "precision": "19/25",
+    "rejected": "7/10",
+    "rejected_none": "6/7",
+    "rejected_policy": "1/3"
    },
    "test": {
     "found": "14/16",
     "top_1": "14/16",
-    "rejected": "6/8"
+    "only_right": "10/16",
+    "precision": "14/21",
+    "rejected": "6/8",
+    "rejected_none": "5/5",
+    "rejected_policy": "1/3"
    }
   },
   "0.45": {
    "dev": {
     "found": "19/22",
     "top_1": "19/22",
-    "rejected": "8/10"
+    "only_right": "18/22",
+    "precision": "19/20",
+    "rejected": "8/10",
+    "rejected_none": "7/7",
+    "rejected_policy": "1/3"
    },
    "test": {
     "found": "12/16",
     "top_1": "12/16",
-    "rejected": "6/8"
+    "only_right": "9/16",
+    "precision": "12/16",
+    "rejected": "6/8",
+    "rejected_none": "5/5",
+    "rejected_policy": "1/3"
    }
   },
   "0.5": {
    "dev": {
     "found": "16/22",
     "top_1": "16/22",
-    "rejected": "9/10"
+    "only_right": "16/22",
+    "precision": "16/16",
+    "rejected": "9/10",
+    "rejected_none": "7/7",
+    "rejected_policy": "2/3"
    },
    "test": {
     "found": "11/16",
     "top_1": "11/16",
-    "rejected": "6/8"
+    "only_right": "10/16",
+    "precision": "11/12",
+    "rejected": "6/8",
+    "rejected_none": "5/5",
+    "rejected_policy": "1/3"
    }
   },
   "0.55": {
    "dev": {
     "found": "13/22",
     "top_1": "13/22",
-    "rejected": "10/10"
+    "only_right": "13/22",
+    "precision": "13/13",
+    "rejected": "10/10",
+    "rejected_none": "7/7",
+    "rejected_policy": "3/3"
    },
    "test": {
     "found": "8/16",
     "top_1": "8/16",
-    "rejected": "7/8"
+    "only_right": "8/16",
+    "precision": "8/8",
+    "rejected": "7/8",
+    "rejected_none": "5/5",
+    "rejected_policy": "2/3"
    }
   },
   "0.6": {
    "dev": {
     "found": "12/22",
     "top_1": "12/22",
-    "rejected": "10/10"
+    "only_right": "12/22",
+    "precision": "12/12",
+    "rejected": "10/10",
+    "rejected_none": "7/7",
+    "rejected_policy": "3/3"
    },
    "test": {
     "found": "6/16",
     "top_1": "6/16",
-    "rejected": "7/8"
+    "only_right": "6/16",
+    "precision": "6/6",
+    "rejected": "7/8",
+    "rejected_none": "5/5",
+    "rejected_policy": "2/3"
    }
   }
  },
