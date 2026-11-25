@@ -49,3 +49,33 @@ def test_gmail_webhook_takes_json_that_is_not_an_object_like_unreadable_data(
         "A 5xx would make Pub/Sub retry the same malformed message forever"
     )
     assert len(webhook) == 2, "The inbox is still checked, like for unreadable data"
+
+
+# ------------------------------------------- 2. /outlook-webhook, odd bodies
+@pytest.mark.parametrize(
+    "request_kwargs",
+    [
+        {"content": b"this is not json"},
+        {"content": b"\xff\xfe"},
+        {"json": [{"clientState": TOKEN}]},
+        {"json": "text"},
+        {"json": None},
+        {"json": {"value": ["text"]}},
+        {"json": {"value": [None]}},
+        {"json": {"value": [{"clientState": TOKEN}, 7]}},
+        {"json": {"value": "text"}},
+        {"json": {"value": {"clientState": TOKEN}}},
+    ],
+)
+def test_outlook_webhook_rejects_a_malformed_body_without_processing(
+    webhook, request_kwargs
+):
+    response = client.post("/outlook-webhook", **request_kwargs)
+    assert 400 <= response.status_code < 500
+    assert webhook == [], "Nothing is processed for a malformed notification"
+
+
+def test_outlook_webhook_still_accepts_a_good_notification(webhook):
+    good = {"value": [{"clientState": TOKEN, "resource": "me/messages/1"}]}
+    assert client.post("/outlook-webhook", json=good).status_code == 202
+    assert len(webhook) == 1

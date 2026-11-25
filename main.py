@@ -192,7 +192,17 @@ async def outlook_webhook(
     expected = os.environ.get("WEBHOOK_TOKEN")
     if not expected:
         raise HTTPException(status_code=503, detail="WEBHOOK_TOKEN is not configured")
-    notifications = (await request.json()).get("value", [])
+    # Anyone can POST here, so the body can be anything: whatever isn't the shape
+    # Graph sends ({"value": [{...}, ...]}) is a 400, never an unhandled error.
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="The body is not JSON")
+    notifications = body.get("value", []) if isinstance(body, dict) else None
+    if not isinstance(notifications, list) or not all(
+        isinstance(n, dict) for n in notifications
+    ):
+        raise HTTPException(status_code=400, detail="Malformed notification")
     if not notifications or not all(
         secrets.compare_digest(n.get("clientState") or "", expected)
         for n in notifications
