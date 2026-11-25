@@ -156,7 +156,7 @@ How much to trust this:
 
 - 0.40 was fixed before the test queries existed, so 14/16 is an honest check of that value. Since then I've used the test group to turn down 0.45 and two experiments, so it now works as a validation set: the next change needs fresh queries, ideally real customer emails and not ones I wrote.
 - The two groups disagree about 0.45 (one more rejection on dev, two fewer hits on test). A two-query difference is noise, so I kept the value I already had. The threshold isn't pinned down to better than about ±0.05: three queries sit within 0.05 of it.
-- **The maximum count (2) is a cap, not a tuned value.** Whenever the right document passes the threshold it is ranked first, so a maximum of 1 finds exactly the same documents. Of the documents returned for answerable test queries, the right one is 14 of 21 with a maximum of 3, 14 of 18 with 2 and 14 of 14 with 1. I lowered it from 3 to 2: less noise for Claude, and still room for an email that asks two things, which this set doesn't cover yet. The end-to-end evals below were run with 3 and haven't been rerun.
+- **The maximum count (2) is a cap, not a tuned value.** Whenever the right document passes the threshold it is ranked first, so a maximum of 1 finds exactly the same documents. Of the documents returned for answerable test queries, the right one is 14 of 21 with a maximum of 3, 14 of 18 with 2 and 14 of 14 with 1. I lowered it from 3 to 2: less noise for Claude, and still room for an email that asks two things, which this set doesn't cover yet. The end-to-end evals below were rerun with 2.
 - "Unanswerable" mixes two kinds of query that behave in opposite ways. Questions nothing in the store answers (the weather, motorcycle parts) get no documents 11 times out of 12. Questions a *policy* answers (returns, warranty, installments) get FAQ documents anyway 4 times out of 6, because the nearest FAQ text is still close.
 
 No value gets both columns right, so the threshold is not the only defense:
@@ -331,14 +331,14 @@ Each draft is scored on six checks:
 
 | Model | Intent | Urgency | Alert | Content | Tools | Faithful | Errors | Median time |
 |---|---|---|---|---|---|---|---|---|
-| **Claude Haiku 5.5** (default) | 31/31 | 31/31 | 31/31 | 31/31 | 31/31 | 26/31 | 0 | 3.2 s |
-| Claude Sonnet 5.5 | 31/31 | 31/31 | 31/31 | 31/31 | 31/31 | 29/31 | 0 | 4.5 s |
-| Claude Opus 5.5 | 30/30 | 30/30 | 30/30 | 30/30 | 30/30 | 27/30 | 1 | 5.2 s |
+| **Claude Haiku 5.5** (default) | 31/31 | 31/31 | 31/31 | 31/31 | 31/31 | 28/31 | 0 | 3.2 s |
+| Claude Sonnet 5.5 | 31/31 | 31/31 | 31/31 | 31/31 | 31/31 | 30/31 | 0 | 4.2 s |
+| Claude Opus 5.5 | 30/30 | 30/30 | 30/30 | 30/30 | 30/30 | 29/30 | 1 | 5.3 s |
 
 How to read it:
 
 - **The first five checks don't separate the models**, so the default is the cheapest and fastest one. The tools check is the new one that matters: every case that needs `find_order`, `find_policy` or `search_docs` called it, and the email that orders the agent to dump its documents triggered no tool call at all.
-- **Faithfulness is where the drafts fall short, and it's noisy.** Three runs of Haiku gave 28, 26 and 26 of 31, with *different* cases failing each time. One run per model can't rank them: the 29 for Sonnet and the 26 for Haiku are within that spread. What fails is never order or policy data. It's small friendly extras that nobody authorized: *"you can find it in your order confirmation email"*, *"we'll answer as soon as we open"*, *"I'll send over a calendar invite shortly"*.
+- **Faithfulness is where the drafts fall short, and it's noisy.** Four runs of Haiku gave 28, 26, 26 and 28 of 31, and the set of failing cases changes from run to run (two recur: the reply to spam and a freelance refund question). One run per model can't rank them: the 30 for Sonnet and the 28 for Haiku are within that spread. The last run of each model (the table) came after lowering the maximum number of documents from 3 to 2 and scored a little higher, but none of the cases that failed before or after is an FAQ case, so that is the same spread and not an effect of the change. What fails is never order or policy data. It's small friendly extras that nobody authorized: *"you can find it in your order confirmation email"*, *"we'll answer as soon as we open"*, *"I'll send over a calendar invite shortly"*.
 - **The judge is checked before it's trusted.** `evals/check_judge.py` runs it on 12 hand-written drafts whose verdict is known (an invented price, a promised reply time, a refund taken from an injected instruction, and their faithful counterparts): it got 12 of 12. That shows it catches clear cases, not that it's right on borderline ones, and on the real drafts it is strict: it flagged a polite *"we're not interested in this service"* in reply to spam.
 - **Opus's error is a refusal.** On one prompt-injection email Opus stops with `stop_reason: refusal` and writes no draft. The first time this showed up as an unexplained invalid-JSON error; recording the stop reason is one of the fixes that followed.
 - **Prompt changes didn't measurably help.** After the first run I added rules against the kinds of extras the judge found (describing progress nobody reported, saying something was already done). The next two runs scored 26 and 26. With this much run-to-run noise, telling whether a prompt change works needs several runs before and after, which is the next step.
