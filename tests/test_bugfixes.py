@@ -584,3 +584,20 @@ def test_outlook_email_without_a_sender_address_has_an_empty_sender(sender):
     assert inbox.list_pending() == ["m1"], "Not mine, so it still needs a reply"
     assert inbox.read_email("m1").sender == "", "Like Gmail and IMAP without a From"
     assert graph_headers({**message, "internetMessageHeaders": None})["from"] == " <>"
+
+
+# ------------------------------------- 9. Outlook: list_pending in a stable order
+def test_outlook_pending_emails_come_in_the_order_graph_listed_them():
+    names = "kiwi fig apple mango pear plum lime cherry grape melon peach date".split()
+    messages = []
+    for name in names:
+        when = "2026-11-04T10:00:00Z"
+        messages.append(omsg(f"first-{name}", when, "mark@x.com", conversation=name))
+        # A second email in each conversation: listed twice, pending once
+        messages.append(
+            omsg(f"last-{name}", "2026-11-04T11:00:00Z", "mark@x.com", name)
+        )
+    expected = [f"last-{name}" for name in names]
+    assert outlook(FakeGraph(messages)).list_pending() == expected, (
+        "A set of conversation ids has no order: it changed from run to run"
+    )

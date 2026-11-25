@@ -158,7 +158,7 @@ class OutlookInbox:
         return response.json()
 
     def _recent_ids(self):
-        """Conversation IDs of the recent emails the agent handles."""
+        """Conversation IDs of the recent emails the agent handles, without repeats."""
         since = (
             datetime.now(timezone.utc) - timedelta(days=PENDING_MAX_DAYS)
         ).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -173,7 +173,9 @@ class OutlookInbox:
         data = self._get(
             path, params={"$filter": query, "$select": "conversationId", "$top": "100"}
         )
-        return {m["conversationId"] for m in data.get("value", [])}
+        # Each conversation once, in the order Graph listed them (dict.fromkeys keeps
+        # it; a set would give a different order on every run)
+        return list(dict.fromkeys(m["conversationId"] for m in data.get("value", [])))
 
     def list_pending(self):
         """IDs of the emails that still need a reply (see mail/core.py, email_to_answer)."""
