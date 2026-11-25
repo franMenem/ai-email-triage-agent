@@ -161,6 +161,9 @@ async def gmail_webhook(
     # It's logged, and the inbox is checked the usual way: labeled, not answered, no draft.
     try:
         notification = json.loads(base64.b64decode(push.message.data))
+        if not isinstance(notification, dict):
+            # Valid JSON, but not the object Gmail sends ([1], 123, null...)
+            raise ValueError("the notification is not a JSON object")
         print(f"Gmail notification: historyId={notification.get('historyId')}")
     except (ValueError, TypeError):
         print(f"Pub/Sub message {push.message.messageId} without readable data")
