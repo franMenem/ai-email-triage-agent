@@ -1,0 +1,398 @@
+{
+ "min_score": 0.4,
+ "k": 3,
+ "summary": {
+  "found": "19/22",
+  "top_1": "19/22",
+  "rejected": "7/10"
+ },
+ "sweep": {
+  "0.2": {
+   "found": "22/22",
+   "top_1": "20/22",
+   "rejected": "4/10"
+  },
+  "0.25": {
+   "found": "20/22",
+   "top_1": "20/22",
+   "rejected": "5/10"
+  },
+  "0.3": {
+   "found": "20/22",
+   "top_1": "20/22",
+   "rejected": "6/10"
+  },
+  "0.35": {
+   "found": "20/22",
+   "top_1": "20/22",
+   "rejected": "6/10"
+  },
+  "0.4": {
+   "found": "19/22",
+   "top_1": "19/22",
+   "rejected": "7/10"
+  },
+  "0.45": {
+   "found": "19/22",
+   "top_1": "19/22",
+   "rejected": "8/10"
+  },
+  "0.5": {
+   "found": "16/22",
+   "top_1": "16/22",
+   "rejected": "9/10"
+  },
+  "0.55": {
+   "found": "13/22",
+   "top_1": "13/22",
+   "rejected": "10/10"
+  },
+  "0.6": {
+   "found": "12/22",
+   "top_1": "12/22",
+   "rejected": "10/10"
+  }
+ },
+ "cases": [
+  {
+   "query": "Are you open on Saturdays?",
+   "expected": "opening_hours",
+   "returned": [
+    "opening_hours"
+   ],
+   "best": [
+    "opening_hours",
+    0.628
+   ]
+  },
+  {
+   "query": "¿Atienden los sábados?",
+   "expected": "opening_hours",
+   "returned": [
+    "opening_hours"
+   ],
+   "best": [
+    "opening_hours",
+    0.501
+   ]
+  },
+  {
+   "query": "What time does customer support close?",
+   "expected": "opening_hours",
+   "returned": [
+    "opening_hours",
+    "stock"
+   ],
+   "best": [
+    "opening_hours",
+    0.775
+   ]
+  },
+  {
+   "query": "¿Hasta qué hora puedo llamarlos?",
+   "expected": "opening_hours",
+   "returned": [
+    "opening_hours"
+   ],
+   "best": [
+    "opening_hours",
+    0.496
+   ]
+  },
+  {
+   "query": "Where is my package right now?",
+   "expected": "order_tracking",
+   "returned": [],
+   "best": [
+    "stock",
+    0.299
+   ]
+  },
+  {
+   "query": "How can I track my order?",
+   "expected": "order_tracking",
+   "returned": [
+    "order_tracking"
+   ],
+   "best": [
+    "order_tracking",
+    0.717
+   ]
+  },
+  {
+   "query": "¿Dónde puedo ver el seguimiento de mi pedido?",
+   "expected": "order_tracking",
+   "returned": [
+    "order_tracking",
+    "opening_hours"
+   ],
+   "best": [
+    "order_tracking",
+    0.627
+   ]
+  },
+  {
+   "query": "Necesito factura con el CUIT de mi empresa",
+   "expected": "invoices",
+   "returned": [
+    "invoices"
+   ],
+   "best": [
+    "invoices",
+    0.45
+   ]
+  },
+  {
+   "query": "I didn't get the invoice for my purchase",
+   "expected": "invoices",
+   "returned": [],
+   "best": [
+    "invoices",
+    0.387
+   ]
+  },
+  {
+   "query": "Can I get an invoice with my company tax ID?",
+   "expected": "invoices",
+   "returned": [
+    "invoices"
+   ],
+   "best": [
+    "invoices",
+    0.677
+   ]
+  },
+  {
+   "query": "Do gift cards expire?",
+   "expected": "gift_cards",
+   "returned": [
+    "gift_cards",
+    "stock"
+   ],
+   "best": [
+    "gift_cards",
+    0.702
+   ]
+  },
+  {
+   "query": "¿Puedo canjear una gift card por plata?",
+   "expected": "gift_cards",
+   "returned": [
+    "gift_cards"
+   ],
+   "best": [
+    "gift_cards",
+    0.602
+   ]
+  },
+  {
+   "query": "What amounts can I buy a gift card for?",
+   "expected": "gift_cards",
+   "returned": [
+    "gift_cards",
+    "wholesale"
+   ],
+   "best": [
+    "gift_cards",
+    0.734
+   ]
+  },
+  {
+   "query": "¿Cuándo vuelve a haber stock?",
+   "expected": "stock",
+   "returned": [
+    "stock"
+   ],
+   "best": [
+    "stock",
+    0.613
+   ]
+  },
+  {
+   "query": "The jacket I want is sold out, will you restock it?",
+   "expected": "stock",
+   "returned": [
+    "stock"
+   ],
+   "best": [
+    "stock",
+    0.502
+   ]
+  },
+  {
+   "query": "Precio por mayor para 50 unidades",
+   "expected": "wholesale",
+   "returned": [
+    "wholesale"
+   ],
+   "best": [
+    "wholesale",
+    0.559
+   ]
+  },
+  {
+   "query": "Do you offer discounts for bulk orders?",
+   "expected": "wholesale",
+   "returned": [
+    "wholesale",
+    "stock"
+   ],
+   "best": [
+    "wholesale",
+    0.624
+   ]
+  },
+  {
+   "query": "¿Tienen local a la calle?",
+   "expected": "physical_stores",
+   "returned": [],
+   "best": [
+    "opening_hours",
+    0.36
+   ]
+  },
+  {
+   "query": "Do you have a store I can visit?",
+   "expected": "physical_stores",
+   "returned": [
+    "physical_stores",
+    "opening_hours"
+   ],
+   "best": [
+    "physical_stores",
+    0.518
+   ]
+  },
+  {
+   "query": "¿Puedo pasar a ver los productos en persona?",
+   "expected": "physical_stores",
+   "returned": [
+    "physical_stores"
+   ],
+   "best": [
+    "physical_stores",
+    0.453
+   ]
+  },
+  {
+   "query": "I forgot my password",
+   "expected": "account",
+   "returned": [
+    "account"
+   ],
+   "best": [
+    "account",
+    0.761
+   ]
+  },
+  {
+   "query": "¿Cómo cambio el mail de mi cuenta?",
+   "expected": "account",
+   "returned": [
+    "account"
+   ],
+   "best": [
+    "account",
+    0.752
+   ]
+  },
+  {
+   "query": "Can I pay in installments?",
+   "expected": null,
+   "returned": [
+    "gift_cards",
+    "invoices"
+   ],
+   "best": [
+    "gift_cards",
+    0.464
+   ]
+  },
+  {
+   "query": "Do you sell motorcycle parts?",
+   "expected": null,
+   "returned": [
+    "wholesale"
+   ],
+   "best": [
+    "wholesale",
+    0.405
+   ]
+  },
+  {
+   "query": "I want to work with you, are you hiring?",
+   "expected": null,
+   "returned": [],
+   "best": [
+    "opening_hours",
+    0.267
+   ]
+  },
+  {
+   "query": "¿Cuál es la capital de Francia?",
+   "expected": null,
+   "returned": [],
+   "best": [
+    "order_tracking",
+    0.048
+   ]
+  },
+  {
+   "query": "Happy birthday!",
+   "expected": null,
+   "returned": [],
+   "best": [
+    "gift_cards",
+    0.135
+   ]
+  },
+  {
+   "query": "hola",
+   "expected": null,
+   "returned": [],
+   "best": [
+    "opening_hours",
+    0.218
+   ]
+  },
+  {
+   "query": "¿Hacen envíos a Uruguay?",
+   "expected": null,
+   "returned": [],
+   "best": [
+    "wholesale",
+    0.355
+   ]
+  },
+  {
+   "query": "Is this backpack waterproof?",
+   "expected": null,
+   "returned": [],
+   "best": [
+    "stock",
+    0.164
+   ]
+  },
+  {
+   "query": "Can you sponsor my podcast?",
+   "expected": null,
+   "returned": [],
+   "best": [
+    "opening_hours",
+    0.177
+   ]
+  },
+  {
+   "query": "My order arrived broken, I want a refund",
+   "expected": null,
+   "returned": [
+    "stock",
+    "invoices"
+   ],
+   "best": [
+    "stock",
+    0.511
+   ]
+  }
+ ]
+}

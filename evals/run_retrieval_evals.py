@@ -1,0 +1,111 @@
+"""
+Retrieval evals: does the FAQ search find the right document?
+
+Each case in retrieval_cases.json is a query and the id of the document that
+answers it, or null when no FAQ document does. No Claude calls: this only runs
+the embedding model, so it's free and takes a few seconds.
+
+Three numbers, with the settings the tool uses (rag.MIN_SCORE and rag.TOP_K):
+- found: of the queries that have an answer, how many get their document back
+- top 1: of those same queries, how many get it in first place
+- rejected: of the queries with no answer, how many get no documents at all
+
+It also prints the same numbers for other minimum scores, to show what each
+choice costs.
+
+Run it with:
+    uv run --group rag python -m evals.run_retrieval_evals
+"""
+
+import json
+from pathlib import Path
+
+import rag
+
+EVALS_DIR = Path(__file__).parent
+
+
+def retrieve(ranked, min_score, k):
+    """The ids search_docs would return, from a list already scored and sorted."""
+    return [doc_id for doc_id, score in ranked if score >= min_score][:k]
+
+
+def measure(scored_cases, min_score, k):
+    """Counts found / top 1 / rejected for one choice of min_score and k."""
+    with_answer = [c for c in scored_cases if c["expected"] is not None]
+    without_answer = [c for c in scored_cases if c["expected"] is None]
+    found = top_1 = rejected = 0
+    for case in with_answer:
+        ids = retrieve(case["ranked"], min_score, k)
+        found += case["expected"] in ids
+        top_1 += ids[:1] == [case["expected"]]
+    for case in without_answer:
+        rejected += retrieve(case["ranked"], min_score, k) == []
+    return {
+        "found": f"{found}/{len(with_answer)}",
+        "top_1": f"{top_1}/{len(with_answer)}",
+        "rejected": f"{rejected}/{len(without_answer)}",
+    }
+
+
+def main():
+    cases = json.loads((EVALS_DIR / "retrieval_cases.json").read_text())
+    index = rag.faq_index()
+    scored_cases = [
+        {**case, "ranked": rag.score_docs(case["query"], index)} for case in cases
+    ]
+
+    print(f"Cases: {len(cases)} | min_score={rag.MIN_SCORE} k={rag.TOP_K}\n")
+    print(f"{'':3} {'expected':16} {'returned':34} query")
+    for case in scored_cases:
+        ids = retrieve(case["ranked"], rag.MIN_SCORE, rag.TOP_K)
+        expected = case["expected"]
+        ok = ids == [] if expected is None else expected in ids
+        best_id, best_score = case["ranked"][0]
+        returned = ", ".join(ids) if ids else f"(none; best {best_id} {best_score:.2f})"
+        print(
+            f"{'✅' if ok else '❌':3} {expected or '(no answer)':16} {returned:34} {case['query']}"
+        )
+
+    summary = measure(scored_cases, rag.MIN_SCORE, rag.TOP_K)
+    print(f"\nSummary: {summary}")
+
+    print("\nWhat other minimum scores would cost (same k):")
+    print(f"{'min_score':>9}  {'found':>7}  {'top 1':>7}  {'rejected':>8}")
+    sweep = {}
+    for min_score in [0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6]:
+        row = measure(scored_cases, min_score, rag.TOP_K)
+        sweep[str(min_score)] = row
+        mark = "  <- current" if min_score == rag.MIN_SCORE else ""
+        print(
+            f"{min_score:>9}  {row['found']:>7}  {row['top_1']:>7}  {row['rejected']:>8}{mark}"
+        )
+
+    out = EVALS_DIR / "results" / "retrieval.json"
+    out.parent.mkdir(exist_ok=True)
+    out.write_text(
+        json.dumps(
+            {
+                "min_score": rag.MIN_SCORE,
+                "k": rag.TOP_K,
+                "summary": summary,
+                "sweep": sweep,
+                "cases": [
+                    {
+                        "query": c["query"],
+                        "expected": c["expected"],
+                        "returned": retrieve(c["ranked"], rag.MIN_SCORE, rag.TOP_K),
+                        "best": [c["ranked"][0][0], round(c["ranked"][0][1], 3)],
+                    }
+                    for c in scored_cases
+                ],
+            },
+            indent=1,
+            ensure_ascii=False,
+        )
+    )
+    print(f"\nSaved: {out.relative_to(EVALS_DIR.parent)}")
+
+
+if __name__ == "__main__":
+    main()
