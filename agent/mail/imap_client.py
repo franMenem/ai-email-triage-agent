@@ -125,13 +125,26 @@ def imap_date(when: datetime) -> str:
 def parse_fetch(response):
     """imaplib FETCH response -> [(uid, internal date in seconds, raw bytes)]."""
     out = []
-    for item in response:
+    for position, item in enumerate(response):
         if not isinstance(item, tuple):
             continue
         meta, data = item
-        uid = int(re.search(rb"UID (\d+)", meta).group(1))
-        internal = imaplib.Internaldate2tuple(meta)
-        out.append((uid, time.mktime(internal) if internal else time.time(), data))
+        # imaplib gives each message as (what came before its literal, the literal)
+        # and then, as plain bytes, what came after it: at least the ")". Servers
+        # may send UID and INTERNALDATE on either side of the literal.
+        after = response[position + 1] if position + 1 < len(response) else b""
+        info = meta + b" " + after if isinstance(after, bytes) else meta
+        uid = re.search(rb"UID (\d+)", info)
+        if not uid:
+            raise ValueError(f"FETCH response without UID: {info!r}")
+        internal = imaplib.Internaldate2tuple(info)
+        out.append(
+            (
+                int(uid.group(1)),
+                time.mktime(internal) if internal else time.time(),
+                data,
+            )
+        )
     return out
 
 

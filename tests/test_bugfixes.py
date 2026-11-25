@@ -20,6 +20,7 @@ import main
 import process_inbox
 from agent import drafter
 from agent.mail import gmail_client
+from agent.mail.imap_client import parse_fetch
 from agent.mail.outlook_client import OutlookInbox, graph_headers
 from agent.models import Draft, Email
 from agent.tools import find_order, run_tool
@@ -731,3 +732,44 @@ def test_gmail_with_a_single_page_or_no_threads_asks_once(monkeypatch):
     empty = PagedGmail([], page_size=100)
     assert gmail_client.GmailInbox(empty).list_pending() == []
     assert len(empty.list_calls) == 1
+
+
+# ------------------------------------- 12. IMAP: the UID after the literal
+INTERNAL = b'INTERNALDATE "04-Nov-2026 10:00:00 +0000"'
+
+
+def test_parse_fetch_reads_the_uid_before_or_after_the_literal():
+    raw = b"Subject: Hi\r\n\r\n"
+    before = [(b"7 (UID 41 " + INTERNAL + b" BODY[] {15}", raw), b")"]
+    after = [(b"7 (" + INTERNAL + b" BODY[] {15}", raw), b" UID 41)"]
+    all_after = [(b"7 (BODY[] {15}", raw), b" UID 41 " + INTERNAL + b")"]
+    expected = parse_fetch(before)
+    assert [(uid, data) for uid, _, data in expected] == [(41, raw)]
+    assert parse_fetch(after) == expected
+    assert parse_fetch(all_after) == expected, "The date is found after it too"
+
+
+def test_parse_fetch_pairs_each_message_with_its_own_uid():
+    response = [
+        (b"1 (" + INTERNAL + b" BODY[] {1}", b"a"),
+        b" UID 10)",
+        (b"2 (UID 20 " + INTERNAL + b" BODY[] {1}", b"b"),
+        b")",
+        (b"3 (BODY[] {1}", b"c"),
+        b" UID 30 " + INTERNAL + b")",
+    ]
+    assert [(uid, data) for uid, _, data in parse_fetch(response)] == [
+        (10, b"a"),
+        (20, b"b"),
+        (30, b"c"),
+    ]
+
+
+def test_parse_fetch_does_not_take_a_uid_from_the_email_itself():
+    raw = b"Subject: my UID 999 is wrong\r\n\r\n"
+    assert parse_fetch([(b"1 (BODY[] {32}", raw), b" UID 5)"])[0][0] == 5
+
+
+def test_parse_fetch_without_any_uid_says_so():
+    with pytest.raises(ValueError, match="without UID"):
+        parse_fetch([(b"1 (BODY[] {1}", b"a"), b")"])
