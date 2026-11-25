@@ -8,12 +8,14 @@ import base64
 import json
 import sys
 import types
+from types import SimpleNamespace as NS
 
 import pytest
 from fastapi.testclient import TestClient
 
 import agent
 import main
+from agent import drafter
 from agent.models import Email
 from agent.tools import find_order, run_tool
 
@@ -256,10 +258,6 @@ def test_a_real_search_error_is_not_turned_into_a_missing_input_or_no_documents(
 
 
 def test_a_missing_tool_input_does_not_kill_the_draft(monkeypatch):
-    from types import SimpleNamespace as NS
-
-    from agent import drafter
-
     final = json.dumps(
         {"draft": "D", "internal_notes": "N", "intent": "other", "urgency": "low"}
     )
@@ -280,3 +278,71 @@ def test_a_missing_tool_input_does_not_kill_the_draft(monkeypatch):
     draft = asyncio.run(drafter.draft_reply(MAIL, "store"))
     assert draft.draft == "D"
     assert "order_id" in requests[1][2]["content"][0]["content"]
+
+
+# --------------------------- 6. draft_reply: endless tool loop, answer w/o text
+FINAL = json.dumps(
+    {"draft": "D", "internal_notes": "N", "intent": "other", "urgency": "low"}
+)
+
+
+def asks_for_a_tool():
+    block = NS(type="tool_use", id="tu", name="find_policy", input={"topic": "returns"})
+    return NS(stop_reason="tool_use", content=[block])
+
+
+def final_answer():
+    return NS(stop_reason="end_turn", content=[NS(type="text", text=FINAL)])
+
+
+class ScriptedClaude:
+    """Stands in for the Anthropic client: answers from `script`; once it runs out,
+    it keeps asking for a tool, like a model stuck in a loop."""
+
+    def __init__(self, *script):
+        self.script = list(script)
+        self.calls = 0
+        self.messages = NS(create=self.create)
+
+    async def create(self, **kwargs):
+        self.calls += 1
+        if self.calls > 50:
+            raise AssertionError("draft_reply never stops calling Claude")
+        return self.script.pop(0) if self.script else asks_for_a_tool()
+
+
+def run_draft(monkeypatch, fake):
+    monkeypatch.setattr(drafter, "client", fake)
+    return asyncio.run(drafter.draft_reply(MAIL, "store"))
+
+
+def test_a_model_stuck_asking_for_tools_is_stopped(monkeypatch):
+    assert drafter.MAX_TOOL_ROUNDS == 5
+    fake = ScriptedClaude()
+    with pytest.raises(drafter.DraftError, match="tool"):
+        run_draft(monkeypatch, fake)
+    assert fake.calls == drafter.MAX_TOOL_ROUNDS + 1, (
+        "The first request, one more per round of tools, and then it gives up"
+    )
+
+
+def test_the_last_allowed_round_of_tools_still_gets_its_draft(monkeypatch):
+    rounds = [asks_for_a_tool() for _ in range(drafter.MAX_TOOL_ROUNDS)]
+    fake = ScriptedClaude(*rounds, final_answer())
+    assert run_draft(monkeypatch, fake).draft == "D"
+    assert fake.calls == drafter.MAX_TOOL_ROUNDS + 1
+
+
+@pytest.mark.parametrize(
+    "stop_reason, content",
+    [
+        ("max_tokens", []),
+        ("refusal", []),
+        ("max_tokens", [NS(type="thinking", thinking="...")]),
+        ("end_turn", []),
+    ],
+)
+def test_an_answer_without_text_raises_a_clear_error(monkeypatch, stop_reason, content):
+    fake = ScriptedClaude(NS(stop_reason=stop_reason, content=content))
+    with pytest.raises(drafter.DraftError, match=stop_reason):
+        run_draft(monkeypatch, fake)

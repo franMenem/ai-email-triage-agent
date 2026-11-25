@@ -20,6 +20,13 @@ MODEL = "claude-haiku-5-5"
 
 # The structured-output schema comes from the Pydantic model: one source of truth
 DRAFT_SCHEMA = Draft.model_json_schema()
+# How many times Claude may ask for tools for one email. Each round is another paid
+# request, so a model stuck asking for tools must not go on forever.
+MAX_TOOL_ROUNDS = 5
+
+
+class DraftError(Exception):
+    """Claude didn't produce a draft for this email (the API itself answered fine)."""
 
 
 async def call_claude(messages, profile: Profile, model: str):
@@ -64,7 +71,14 @@ async def draft_reply(
     ]
     response = await call_claude(messages, profile, model)
 
+    rounds = 0
     while response.stop_reason == "tool_use":
+        if rounds == MAX_TOOL_ROUNDS:
+            raise DraftError(
+                f"Claude still asks for tools after {MAX_TOOL_ROUNDS} rounds: "
+                "stopped without a draft"
+            )
+        rounds += 1
         tool_results = []
         for block in response.content:
             if block.type == "tool_use":
@@ -82,6 +96,13 @@ async def draft_reply(
         ]
         response = await call_claude(messages, profile, model)
 
-    return Draft.model_validate_json(
-        next(block for block in response.content if block.type == "text").text
+    # No text block when the answer was cut (max_tokens) or Claude refused
+    text = next(
+        (block.text for block in response.content if block.type == "text"), None
     )
+    if text is None:
+        raise DraftError(
+            f"Claude's answer has no text (stop_reason: {response.stop_reason}): "
+            "there is no draft to read"
+        )
+    return Draft.model_validate_json(text)
