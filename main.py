@@ -100,6 +100,22 @@ async def receive(email: Email):
             )
 
 
+def same_token(given, expected: str) -> bool:
+    """True if `given` is the expected secret.
+
+    compare_digest takes the same time whether the token is right or wrong, so it
+    can't be guessed character by character from the response time. It only takes
+    ASCII strings, so the bytes are compared: a token with an "é" is just wrong,
+    not an error. (surrogatepass: text that isn't valid Unicode still encodes.)
+    """
+    if not isinstance(given, str):
+        return False
+    return secrets.compare_digest(
+        given.encode("utf-8", "surrogatepass"),
+        expected.encode("utf-8", "surrogatepass"),
+    )
+
+
 def require_token(token: str = ""):
     """Only callers that know WEBHOOK_TOKEN (Pub/Sub and the daily renewal) get in.
 
@@ -109,9 +125,7 @@ def require_token(token: str = ""):
     if not expected:
         # Fail closed: without a configured token, nobody gets in
         raise HTTPException(status_code=503, detail="WEBHOOK_TOKEN is not configured")
-    # compare_digest takes the same time whether the token is right or wrong,
-    # so it can't be guessed character by character from the response time
-    if not secrets.compare_digest(token, expected):
+    if not same_token(token, expected):
         raise HTTPException(status_code=403, detail="Invalid token")
 
 
@@ -204,8 +218,7 @@ async def outlook_webhook(
     ):
         raise HTTPException(status_code=400, detail="Malformed notification")
     if not notifications or not all(
-        secrets.compare_digest(n.get("clientState") or "", expected)
-        for n in notifications
+        same_token(n.get("clientState"), expected) for n in notifications
     ):
         raise HTTPException(status_code=403, detail="Invalid clientState")
     background_tasks.add_task(process_in_background, inbox_factory)

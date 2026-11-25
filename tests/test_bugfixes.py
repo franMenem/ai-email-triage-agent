@@ -79,3 +79,35 @@ def test_outlook_webhook_still_accepts_a_good_notification(webhook):
     good = {"value": [{"clientState": TOKEN, "resource": "me/messages/1"}]}
     assert client.post("/outlook-webhook", json=good).status_code == 202
     assert len(webhook) == 1
+
+
+# ------------------------------------------------ 3. tokens that are not ASCII
+@pytest.mark.parametrize("path", ["/gmail-webhook", "/process", "/renew-watch"])
+def test_a_non_ascii_token_is_rejected_like_any_wrong_token(webhook, path):
+    wrong = client.post(f"{path}?token=wrong", json={"message": {}})
+    assert wrong.status_code == 403
+    response = client.post(path, params={"token": "é"}, json={"message": {}})
+    assert response.status_code == wrong.status_code
+    assert webhook == []
+
+
+@pytest.mark.parametrize("state", ["é", "contraseña", "\ud800", 123, ["x"], {"a": 1}])
+def test_a_client_state_that_is_not_ascii_text_is_rejected_like_a_wrong_one(
+    webhook, state
+):
+    def post(client_state):
+        body = json.dumps({"value": [{"clientState": client_state}]})
+        return client.post("/outlook-webhook", content=body)
+
+    assert post("wrong").status_code == 403
+    assert post(state).status_code == 403
+    assert webhook == []
+
+
+def test_a_non_ascii_configured_token_still_works(webhook, monkeypatch):
+    monkeypatch.setenv("WEBHOOK_TOKEN", "contraseña")
+    assert client.post("/process", params={"token": "contraseña"}).status_code == 202
+    assert client.post("/process", params={"token": "contrasena"}).status_code == 403
+    good = {"value": [{"clientState": "contraseña"}]}
+    assert client.post("/outlook-webhook", json=good).status_code == 202
+    assert len(webhook) == 2
