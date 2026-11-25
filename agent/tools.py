@@ -20,12 +20,16 @@ from agent.db import connect_db
 
 def find_order(order_id, email):
     """Returns the order (dict) only if the number AND the email match; otherwise None."""
+    # People write " 1002" or "#1002", and "Customer@Example.com" is the same
+    # mailbox as "customer@example.com". Only the way it's written is forgiven:
+    # the number and the sender must still both match.
+    order_id = str(order_id).strip().removeprefix("#").strip()
     with closing(connect_db()) as con:  # closes the connection on exit
         # The "?" are parameters: SQLite treats the value as data, never as SQL.
         # Never build the query with f-strings: that opens the door to SQL injection.
         row = con.execute(
-            "SELECT * FROM orders WHERE order_id = ? AND email = ?",
-            (str(order_id), email),
+            "SELECT * FROM orders WHERE order_id = ? AND lower(email) = ?",
+            (order_id, email.lower()),
         ).fetchone()
     return dict(row) if row else None
 

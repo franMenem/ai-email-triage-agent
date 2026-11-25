@@ -10,6 +10,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 import main
+from agent.models import Email
+from agent.tools import find_order, run_tool
 
 TOKEN = "test-token"
 # raise_server_exceptions=False: an unhandled error shows up as the 500 a real
@@ -111,3 +113,71 @@ def test_a_non_ascii_configured_token_still_works(webhook, monkeypatch):
     good = {"value": [{"clientState": "contraseña"}]}
     assert client.post("/outlook-webhook", json=good).status_code == 202
     assert len(webhook) == 2
+
+
+# ----------------------------------------- 4. find_order: case, spaces and "#"
+ORDER_1002 = {
+    "order_id": "1002",
+    "email": "customer@example.com",
+    "product": "Running sneakers",
+    "status": "in_transit",
+    "estimated_delivery": "2026-11-12",
+}
+
+
+@pytest.mark.parametrize(
+    "order_id, email",
+    [
+        ("1002", "Customer@Example.com"),
+        ("1002", "CUSTOMER@EXAMPLE.COM"),
+        (" 1002", "customer@example.com"),
+        ("1002\n", "customer@example.com"),
+        ("#1002", "customer@example.com"),
+        (" # 1002 ", "Customer@example.com"),
+        (1002, "customer@example.com"),
+    ],
+)
+def test_find_order_ignores_email_case_and_spaces_or_hash_in_the_number(
+    order_id, email
+):
+    assert find_order(order_id, email) == ORDER_1002
+
+
+@pytest.mark.parametrize(
+    "order_id, email",
+    [
+        ("1003", "customer@example.com"),  # a real order, of someone else
+        ("#1003", "Customer@Example.com"),
+        ("1002", "juan@example.com"),  # a real customer, not the owner
+        ("1002", "customer@example.co"),
+        ("1002", ""),
+        ("", "customer@example.com"),
+        ("#", "customer@example.com"),
+        ("##1002", "customer@example.com"),
+        ("10 02", "customer@example.com"),
+        ("%", "customer@example.com"),
+        ("1002", "%"),
+        ("1002", "customer@example.co_"),
+    ],
+)
+def test_find_order_still_needs_the_number_and_the_sender_to_match(order_id, email):
+    assert find_order(order_id, email) is None
+
+
+@pytest.mark.parametrize(
+    "order_id, email",
+    [
+        ("1002' OR '1'='1", "customer@example.com"),
+        ("#1002' OR '1'='1", "Customer@Example.com"),
+        ("1003' --", "customer@example.com"),
+        ("1003", "x' OR '1'='1"),
+        ("1003", "' OR 1=1 --"),
+        ("1003", "X') OR LOWER('1')=LOWER('1"),
+        ("1003", "juan@example.com' OR email LIKE '%"),
+        ("' OR 1=1 --", "' OR 1=1 --"),
+    ],
+)
+def test_find_order_resists_sql_injection_through_both_fields(order_id, email):
+    assert find_order(order_id, email) is None
+    mail = Email(message_id="t", sender=email, subject="", body="")
+    assert "No order" in run_tool("find_order", {"order_id": order_id}, mail)
