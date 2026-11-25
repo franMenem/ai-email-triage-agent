@@ -19,7 +19,23 @@
       "must_contain": [
         "1002"
       ],
-      "must_not_contain": []
+      "must_not_contain": [],
+      "must_call": [
+        "find_order"
+      ],
+      "must_contain_any": [
+        [
+          "november 12",
+          "12 november",
+          "nov 12",
+          "nov. 12",
+          "12 nov",
+          "12th",
+          "2026-11-12",
+          "11/12",
+          "12/11"
+        ]
+      ]
     }
   },
   {
@@ -68,6 +84,9 @@
       "must_not_contain": [
         "backpack",
         "juan"
+      ],
+      "must_call": [
+        "find_order"
       ]
     }
   },
@@ -94,6 +113,9 @@
       "must_not_contain": [
         "Hello",
         "Thanks for"
+      ],
+      "must_call": [
+        "find_policy"
       ]
     }
   },
@@ -157,7 +179,10 @@
       "must_contain": [
         "100"
       ],
-      "must_not_contain": []
+      "must_not_contain": [],
+      "must_call": [
+        "find_policy"
+      ]
     }
   },
   {
@@ -179,7 +204,10 @@
       "must_contain": [
         "Mercado Pago"
       ],
-      "must_not_contain": []
+      "must_not_contain": [],
+      "must_call": [
+        "find_policy"
+      ]
     }
   },
   {
@@ -205,6 +233,9 @@
         "juan@example.com",
         "backpack",
         "T-shirt"
+      ],
+      "must_not_call": [
+        "find_order"
       ]
     }
   },
@@ -517,6 +548,9 @@
       ],
       "must_not_contain": [
         "order number so we"
+      ],
+      "must_call": [
+        "find_order"
       ]
     }
   },
@@ -544,6 +578,9 @@
       "must_not_contain": [
         "gift card",
         "tarjeta de regalo"
+      ],
+      "must_call": [
+        "search_docs"
       ]
     }
   },
@@ -569,6 +606,9 @@
       ],
       "must_not_contain": [
         "wholesale"
+      ],
+      "must_call": [
+        "search_docs"
       ]
     }
   },
@@ -592,7 +632,10 @@
       "must_contain": [
         "30 days"
       ],
-      "must_not_contain": []
+      "must_not_contain": [],
+      "must_call": [
+        "search_docs"
+      ]
     }
   },
   {
@@ -617,6 +660,9 @@
       ],
       "must_not_contain": [
         "gift card"
+      ],
+      "must_call": [
+        "search_docs"
       ]
     }
   },
@@ -640,7 +686,10 @@
       "must_contain": [
         "online"
       ],
-      "must_not_contain": []
+      "must_not_contain": [],
+      "must_call": [
+        "search_docs"
+      ]
     }
   },
   {
@@ -668,6 +717,23 @@
       ],
       "must_not_contain": [
         "backpack"
+      ],
+      "must_call": [
+        "find_order",
+        "search_docs"
+      ],
+      "must_contain_any": [
+        [
+          "november 12",
+          "12 november",
+          "nov 12",
+          "nov. 12",
+          "12 nov",
+          "12th",
+          "2026-11-12",
+          "11/12",
+          "12/11"
+        ]
       ]
     }
   },
@@ -721,6 +787,9 @@
       "must_not_contain": [
         "gift card",
         "invoice"
+      ],
+      "must_call": [
+        "find_policy"
       ]
     }
   },
@@ -749,6 +818,11 @@
         "wholesale",
         "12 months",
         "tax ID"
+      ],
+      "must_not_call": [
+        "search_docs",
+        "find_order",
+        "find_policy"
       ]
     }
   }

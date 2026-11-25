@@ -49,8 +49,11 @@ async def call_claude(messages, profile: Profile, model: str):
 
 
 async def draft_reply(
-    email: Email, profile: str = "store", model: str = MODEL
+    email: Email, profile: str = "store", model: str = MODEL, trace: list | None = None
 ) -> Draft:
+    """Drafts the reply to one email. If `trace` is a list, every tool call is appended
+    to it as {"tool", "input", "result"}: the evals use it to check what Claude did
+    instead of taking its word for it."""
     profile = PROFILES[profile]
     thread = (
         f"Earlier messages in this thread (oldest first):\n{email.thread}\n---\n"
@@ -84,6 +87,10 @@ async def draft_reply(
         for block in response.content:
             if block.type == "tool_use":
                 text = run_tool(block.name, block.input, email)
+                if trace is not None:
+                    trace.append(
+                        {"tool": block.name, "input": block.input, "result": text}
+                    )
                 tool_results += [
                     {
                         "type": "tool_result",

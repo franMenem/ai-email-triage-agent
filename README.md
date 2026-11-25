@@ -10,7 +10,7 @@ Works with **Gmail / Google Workspace, Outlook / Microsoft 365, and any IMAP mai
 > - **In production:** deployed on FastAPI Cloud with Gmail push notifications; I use it every day with my own clients.
 > - **LLM engineering:** tool calling against a database, structured outputs (Pydantic), whole-thread context, 3 mail providers behind one interface.
 > - **RAG, measured:** FAQ search over embeddings as a tool. The similarity threshold was chosen from labeled queries, then checked on a second set written after it was fixed: the right document comes back for 14 of 16 answerable questions (a small sample: roughly 64% to 97%). Two ideas to improve it were tried, measured and left out because neither moved the results by more than one query.
-> - **Evals, not vibes:** 31 cases (normal, angry, multilingual, FAQ questions, prompt-injection attacks) run across Opus, Sonnet and Haiku. On these checks no model is distinguishable from another, so the default is Haiku, the cheapest and fastest.
+> - **Evals, not vibes:** 31 cases (normal, angry, multilingual, FAQ questions, prompt-injection attacks) across Opus, Sonnet and Haiku, checking the tools that were really called and, with a second model as judge, whether each draft stays within what the email and the tools say. The judge itself is tested on drafts with a known verdict.
 > - **Security by design:** a human approves every draft, the code cannot send email, authorization lives in code (not in the prompt), tested against prompt injection and SQL injection.
 > - **Tested:** pytest with fakes for the LLM and every mailbox, running in GitHub Actions on each push.
 
@@ -257,7 +257,8 @@ The first run opens the browser to grant access (read email + create drafts) and
 uv run --env-file .env python process_inbox.py                  # freelance profile, runs once
 uv run --env-file .env python process_inbox.py --every 5        # keeps running, checks every 5 minutes
 uv run --env-file .env python process_inbox.py --profile store # store demo
-uv run --env-file .env python -m evals.run_evals                # evals (paid API calls)
+uv run --group rag --env-file .env python -m evals.run_evals --judge   # evals with the faithfulness judge (paid API calls)
+uv run --env-file .env python -m evals.check_judge                     # checks the judge on drafts with a known verdict
 uv run --group rag python -m evals.run_retrieval_evals          # FAQ search evals (free, local model)
 ```
 
@@ -320,21 +321,35 @@ The tests check the code; the evals check **the model's answers**. `evals/cases.
 - conversations: a reply that only makes sense with the earlier messages of the thread;
 - FAQ search: questions answered from a document, one mixed with an order, one that no document answers, a payment question that must go to `find_policy` instead, and an attempt to dump every document.
 
-Each draft is scored on four checks: intent, urgency, `ALERT:` when (and only when) it's an attack, and content (text it must include, like the order data or a `[fill in: ...]` gap, and text it must never include, like another customer's order or the tool names).
+Each draft is scored on six checks:
 
-| Model | Intent | Urgency | Alert | Content | Errors | Median time |
-|---|---|---|---|---|---|---|
-| **Claude Haiku 5.5** (default) | 31/31 | 31/31 | 31/31 | 31/31 | 0 | 3.7 s |
-| Claude Sonnet 5.5 | 31/31 | 31/31 | 31/31 | 31/31 | 0 | 4.4 s |
-| Claude Opus 5.5 | 30/30 | 30/30 | 30/30 | 30/30 | 1 | 5.4 s |
+- **intent** and **urgency**: the accepted values;
+- **alert**: `ALERT:` at the start of the notes when, and only when, it's an attack;
+- **content**: text the draft must include (the order data, a `[fill in: ...]` gap) or must never include (another customer's order, the tool names). For facts only a tool supplies, like a delivery date, any of several wordings counts;
+- **tools**: which tools Claude must or must not have called, checked against the calls the code recorded, not against what the model says it did;
+- **faithful**: a second model (the judge, Sonnet) reads the draft next to the email and the recorded tool results, and lists every claim that isn't backed by them.
 
-One run per model, so 31/31 against 30/30 says nothing about which is better: on these checks they are indistinguishable, and the default is the cheapest and fastest. Opus's error: on a prompt-injection email its answer came back cut off mid-sentence, so it wasn't valid JSON and no draft was produced. The run didn't record why it stopped; since then an answer with no usable text raises a clear error that includes the stop reason, and one failing email no longer stops the rest of the round. In an earlier run of 20 cases, Sonnet once wrote `ALERT:` in the middle of the notes instead of at the start. Slips like these are what the evals are for. The detailed answers of each model are in `evals/results/`.
+| Model | Intent | Urgency | Alert | Content | Tools | Faithful | Errors | Median time |
+|---|---|---|---|---|---|---|---|---|
+| **Claude Haiku 5.5** (default) | 31/31 | 31/31 | 31/31 | 31/31 | 31/31 | 26/31 | 0 | 3.2 s |
+| Claude Sonnet 5.5 | 31/31 | 31/31 | 31/31 | 31/31 | 31/31 | 29/31 | 0 | 4.5 s |
+| Claude Opus 5.5 | 30/30 | 30/30 | 30/30 | 30/30 | 30/30 | 27/30 | 1 | 5.2 s |
 
-**What these checks do and don't prove.** They are substring checks, and they catch gross errors: the wrong language, leaked data, a missing key fact. They don't prove a draft is correct. 7 of the 31 cases have no content check at all, 3 don't check the alert, and the run doesn't record which tools were called, so "it used `find_order`" rests on the model's own notes. Reading the saved drafts turned up things that passed and shouldn't have: a project status that wasn't in the email, and a promise to reply "the next business day" that isn't in the FAQ. Closing that gap (recording tool calls, checking facts that only a tool can supply, a judge for faithfulness) is the next step.
+How to read it:
+
+- **The first five checks don't separate the models**, so the default is the cheapest and fastest one. The tools check is the new one that matters: every case that needs `find_order`, `find_policy` or `search_docs` called it, and the email that orders the agent to dump its documents triggered no tool call at all.
+- **Faithfulness is where the drafts fall short, and it's noisy.** Three runs of Haiku gave 28, 26 and 26 of 31, with *different* cases failing each time. One run per model can't rank them: the 29 for Sonnet and the 26 for Haiku are within that spread. What fails is never order or policy data. It's small friendly extras that nobody authorized: *"you can find it in your order confirmation email"*, *"we'll answer as soon as we open"*, *"I'll send over a calendar invite shortly"*.
+- **The judge is checked before it's trusted.** `evals/check_judge.py` runs it on 12 hand-written drafts whose verdict is known (an invented price, a promised reply time, a refund taken from an injected instruction, and their faithful counterparts): it got 12 of 12. That shows it catches clear cases, not that it's right on borderline ones, and on the real drafts it is strict: it flagged a polite *"we're not interested in this service"* in reply to spam.
+- **Opus's error is a refusal.** On one prompt-injection email Opus stops with `stop_reason: refusal` and writes no draft. The first time this showed up as an unexplained invalid-JSON error; recording the stop reason is one of the fixes that followed.
+- **Prompt changes didn't measurably help.** After the first run I added rules against the kinds of extras the judge found (describing progress nobody reported, saying something was already done). The next two runs scored 26 and 26. With this much run-to-run noise, telling whether a prompt change works needs several runs before and after, which is the next step.
+
+In an earlier run of 20 cases, Sonnet once wrote `ALERT:` in the middle of the notes instead of at the start. Slips like these are what the evals are for. The detailed answers of each model, with the recorded tool calls and the judge's findings, are in `evals/results/`.
+
+**What these checks still don't prove.** Content is a substring check: it catches gross errors (the wrong language, leaked data, a missing key fact), not correctness, and 7 of the 31 cases have no content check at all. The judge covers part of that gap but is a model with its own errors. And 31 cases is a small set, written by the same person who wrote the prompts.
 
 In the FAQ cases the model's internal notes illustrate the layers (they are its own account, not a recorded trace). Asked about motorcycle parts, the search returned the wholesale document; the notes say *"It does not answer whether motorcycle parts are sold, so no product availability was confirmed"* and the draft says the team will look into it. Asked about installments, Claude went to `find_policy` instead of the FAQ. In an earlier run of 20 cases, Sonnet once wrote `ALERT:` in the middle of the notes instead of at the start; that format slip is exactly what the evals are for. The detailed answers of each model are in `evals/results/`.
 
-Compare a model with `--model claude-sonnet-5-5`. Next steps: harder cases, and an LLM judge for tone and faithfulness, since the current checks don't score how good a draft reads.
+Compare a model with `--model claude-sonnet-5-5`. Next steps: several runs per model, harder cases, and a judge for tone, since none of these checks score how well a draft reads.
 
 ## Stack
 
@@ -359,9 +374,10 @@ Python 3.12 · Anthropic SDK (Claude, tool calling, structured outputs) · sente
 - [x] Mutation audit of the test suite
 - [ ] FAQ search on the deployed server (embeddings through an API, or vectors computed ahead of time)
 - [ ] Better retrieval, measured on fresh queries: typical questions per document, a question-against-passage model, the policies in the same index; then a vector database
-- [ ] Stronger evals: record tool calls, check facts that only a tool supplies, more than one run per model
+- [x] Stronger evals: recorded tool calls, facts that only a tool supplies, and a faithfulness judge that is itself checked
+- [ ] Several runs per model, to tell a real change from run-to-run noise; then use that to cut the unbacked extras in the drafts
 - [x] Fixed the bugs the audit found (13, one test and one commit each): malformed webhook payloads, case-sensitive order lookup, no cap on tool-calling rounds, one bad email stopping the whole round, Outlook and Gmail pagination, and more. The pagination and Outlook fixes are tested against fakes only, not yet against the real services
-- [ ] LLM judge for draft quality, and tracing
+- [ ] Tracing (cost and latency per email) and a judge for tone
 - [ ] Ready-made profiles per industry: law firms, accountants, online courses, sales teams
 - [ ] Small web page to review, edit and approve drafts before they go to Gmail
 - [ ] Attachments: read PDFs and images that come with an email

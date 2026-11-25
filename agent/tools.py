@@ -55,7 +55,7 @@ TOOL_FIND_ORDER = {
     "input_schema": {
         "type": "object",
         "properties": {
-            "order_id": {"type": "string", "description": "Order number, e.g. 1002"}
+            "order_id": {"type": "string", "description": "Order number, e.g. 48213"}
         },
         "required": ["order_id"],
     },
