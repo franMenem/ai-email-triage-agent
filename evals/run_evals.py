@@ -91,6 +91,11 @@ async def run_case(case, model, semaphore, judge_model):
             result = await _run_case(case, model, judge_model)
             for name, check in result.get("checks", {}).items():
                 traced.score(name, check["passed"], check["detail"])
+            checks = result.get("checks", {})
+            failed = [name for name, check in checks.items() if not check["passed"]]
+            if "error" in result:
+                failed = ["error"]
+            traced.finish(not failed, failed)
             return result
 
 

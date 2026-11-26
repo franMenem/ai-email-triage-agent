@@ -20,6 +20,8 @@ import os
 from contextlib import contextmanager
 
 HIDDEN = "[hidden]"
+# Name the traces show as their service (otherwise "unknown_service:python3")
+SERVICE_NAME = "ai-email-triage-agent"
 # Read by the Anthropic instrumentation each time it records a request
 _CONTENT_SWITCH = "TRACELOOP_TRACE_CONTENT"
 # Attributes that carry text of the email, the tools or the draft. With content
@@ -81,6 +83,9 @@ def setup(capture_content: bool = False, environment: str = "production") -> boo
     from opentelemetry.instrumentation.anthropic import AnthropicInstrumentor
 
     _capture_content = capture_content
+    # The OpenTelemetry SDK that Langfuse uses reads the service name from this variable
+    # (a value already set by the host wins)
+    os.environ.setdefault("OTEL_SERVICE_NAME", SERVICE_NAME)
     os.environ[_CONTENT_SWITCH] = "true" if capture_content else "false"
     _client = Langfuse(
         environment=environment,
@@ -125,7 +130,7 @@ def _inside_a_trace() -> bool:
 
 
 @contextmanager
-def email_trace(email, profile: str, model: str):
+def email_trace(email, profile: str, model: str, demo: bool = False):
     """One trace for one email: everything inside the `with` hangs from it."""
     if _client is None:
         yield _NoTrace()
@@ -138,8 +143,8 @@ def email_trace(email, profile: str, model: str):
     with propagate_attributes(
         # Inside an eval case the trace already has a name: keep that one
         trace_name=None if _inside_a_trace() else "draft-email",
-        tags=[f"profile:{profile}"],
-        metadata={"profile": profile, "model": model},
+        tags=[f"profile:{profile}"] + (["demo"] if demo else []),
+        metadata={"profile": profile, "draft_model": model},
     ):
         with _client.start_as_current_observation(
             name="draft-email", as_type="agent", input=_visible(shown)
@@ -165,6 +170,9 @@ class _NoCase:
     def score(self, check, passed, detail):
         pass
 
+    def finish(self, passed, failed_checks):
+        pass
+
 
 class _EvalCase:
     def __init__(self, observation):
@@ -172,8 +180,19 @@ class _EvalCase:
 
     def score(self, check: str, passed: bool, detail: str):
         """Attaches one eval check to the trace, so runs can be filtered by it."""
+        # "<check>_ok": the score says the check passed, not that something went off
+        # (a score called "alert: True" looks like an alert was raised)
         self._observation.score_trace(
-            name=check, value=1 if passed else 0, data_type="BOOLEAN", comment=detail
+            name=f"{check}_ok",
+            value=1 if passed else 0,
+            data_type="BOOLEAN",
+            comment=detail,
+        )
+
+    def finish(self, passed: bool, failed_checks: list):
+        """The result of the case. Eval data, not email content: always visible."""
+        self._observation.update(
+            output={"passed": passed, "failed_checks": failed_checks}
         )
 
 
@@ -188,7 +207,7 @@ def eval_case(case_id: str, model: str):
     with propagate_attributes(
         trace_name="eval-case",
         tags=["eval"],
-        metadata={"case": case_id, "model": model},
+        metadata={"case": case_id, "draft_model": model},
     ):
         with _client.start_as_current_observation(
             name="eval-case", as_type="chain", input={"case": case_id}

@@ -235,7 +235,7 @@ def test_labels_are_sent_even_when_content_is_hidden(fake_client):
     }
     attributes = fake_client.propagated[0]
     assert attributes["tags"] == ["profile:store"]
-    assert attributes["metadata"] == {"profile": "store", "model": "claude-haiku-5-5"}
+    assert attributes["metadata"] == {"profile": "store", "draft_model": "claude-haiku-5-5"}
 
 
 def test_content_is_visible_with_capture_content(monkeypatch, fake_client):
@@ -315,14 +315,39 @@ def test_eval_case_score_records_the_check(fake_client):
     assert root.kwargs["as_type"] == "chain"
     assert root.kwargs["input"] == {"case": "store-spam"}
     assert root.scores == [
-        dict(name="reply", value=1, data_type="BOOLEAN", comment="needs_reply=False"),
-        dict(name="tools", value=0, data_type="BOOLEAN", comment="called=[]"),
+        dict(name="reply_ok", value=1, data_type="BOOLEAN", comment="needs_reply=False"),
+        dict(name="tools_ok", value=0, data_type="BOOLEAN", comment="called=[]"),
     ]
     assert fake_client.propagated[0]["tags"] == ["eval"]
     assert fake_client.propagated[0]["metadata"] == {
         "case": "store-spam",
-        "model": "claude-haiku-5-5",
+        "draft_model": "claude-haiku-5-5",
     }
+
+
+def test_eval_case_gets_a_small_result_as_output(fake_client):
+    with tracing.eval_case("store-spam", "m") as case:
+        case.finish(False, ["tools"])
+    (root,) = fake_client.observations
+    assert root.updates == [{"output": {"passed": False, "failed_checks": ["tools"]}}]
+
+
+def test_the_service_name_is_set_unless_the_host_chose_one(monkeypatch):
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk")
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk")
+    monkeypatch.delenv("OTEL_SERVICE_NAME", raising=False)
+    monkeypatch.setattr(tracing, "_client", None)
+    from opentelemetry.instrumentation.anthropic import AnthropicInstrumentor
+
+    monkeypatch.setattr(langfuse, "Langfuse", lambda **kwargs: object())
+    monkeypatch.setattr(AnthropicInstrumentor, "instrument", lambda self: None)
+    try:
+        assert tracing.setup() is True
+        assert os.environ["OTEL_SERVICE_NAME"] == "ai-email-triage-agent"
+    finally:
+        monkeypatch.setattr(tracing, "_client", None)
+        os.environ.pop("OTEL_SERVICE_NAME", None)
+        os.environ.pop("TRACELOOP_TRACE_CONTENT", None)
 
 
 # ------------------------------------------------------------------ flush
