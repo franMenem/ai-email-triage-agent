@@ -18,6 +18,10 @@ HTTP endpoints.
 - POST /renew-watch: renews the Gmail watch or the Outlook subscription, which
   expire after 7 days. A daily GitHub Actions cron calls it.
 
+- GET /demo and POST /demo/draft: a public web page to try the agent with pasted
+  business information and no mailbox (see agent/demo.py). Needs an access code from
+  DEMO_ACCESS_CODES; without that variable the demo is off.
+
 /gmail-webhook, /process and /renew-watch require ?token=<WEBHOOK_TOKEN>;
 /outlook-webhook checks the same secret in the clientState Graph sends back.
 The mailbox is chosen with MAIL_PROVIDER (see inboxes.py).
@@ -36,10 +40,10 @@ import secrets
 
 import anthropic
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
-from fastapi.responses import PlainTextResponse, Response
-from pydantic import BaseModel
+from fastapi.responses import HTMLResponse, PlainTextResponse, Response
+from pydantic import BaseModel, ValidationError
 
-from agent import tracing
+from agent import demo, tracing
 from agent.drafter import DraftError, draft_reply
 from agent.mail.inboxes import open_inbox
 from agent.models import Email
@@ -253,3 +257,84 @@ def renew_watch(inbox_factory=Depends(get_inbox_factory)):
         )
     expires = inbox.start_watch()
     return {"status": "watch renewed", "expires": expires.isoformat(timespec="minutes")}
+
+
+# ------------------------------------------------------------------ public demo
+# The page loads nothing from outside and talks only to this server
+DEMO_PAGE_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
+        "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    ),
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "Cache-Control": "no-store",
+}
+
+
+@app.get("/demo", response_class=HTMLResponse)
+def demo_page():
+    if not demo.access_codes():
+        return HTMLResponse(
+            demo.NOT_AVAILABLE_PAGE, status_code=503, headers=DEMO_PAGE_HEADERS
+        )
+    return HTMLResponse(demo.PAGE.read_text(encoding="utf-8"), headers=DEMO_PAGE_HEADERS)
+
+
+@app.post("/demo/draft")
+async def demo_draft(request: demo.DemoRequest):
+    # Everything that can be refused is refused before Claude is called (and paid for)
+    codes = demo.access_codes()
+    if not codes:
+        raise HTTPException(status_code=503, detail="The demo is not available")
+    code = demo.find_code(request.code, codes)
+    if code is None:
+        raise HTTPException(status_code=401, detail="Invalid access code")
+    left = demo.reserve(code, codes[code])
+    if left is None:
+        raise HTTPException(
+            status_code=429, detail="This code has no drafts left today (UTC day)"
+        )
+    # No logging in this function: it would print the code or the text of the email
+    email = Email(
+        message_id="demo",
+        sender=request.sender,
+        subject=request.subject,
+        body=request.body,
+    )
+    try:
+        draft = await draft_reply(
+            email,
+            request.business_type,
+            demo.demo_model(),
+            business_info=request.business_info,
+        )
+    except anthropic.APIConnectionError:
+        demo.release(code)
+        raise HTTPException(
+            status_code=503, detail="Claude API is unreachable, try again later"
+        )
+    except anthropic.APIStatusError as e:
+        demo.release(code)
+        if e.status_code == 429 or e.status_code >= 500:
+            raise HTTPException(
+                status_code=503, detail="Claude API is busy, try again later"
+            )
+        raise HTTPException(
+            status_code=500, detail="The service is not available right now"
+        )
+    except (DraftError, ValidationError):
+        # Claude answered, but without a usable draft (for example, it ran out of tokens)
+        demo.release(code)
+        raise HTTPException(
+            status_code=500, detail="The model didn't produce a usable draft"
+        )
+    return {
+        "needs_reply": draft.needs_reply,
+        "draft": draft.draft,
+        "internal_notes": draft.internal_notes,
+        "intent": draft.intent,
+        "urgency": draft.urgency,
+        "remaining_today": left,
+        "daily_limit": codes[code],
+    }

@@ -52,7 +52,8 @@ There is no state file: an email is skipped once its thread has a draft written 
 | `agent/mail/inboxes.py` | Picks the mailbox with `MAIL_PROVIDER` |
 | `agent/tracing.py` | Optional Langfuse tracing: one trace per email. Off unless the Langfuse keys are set; the rest of the code only calls its helpers |
 | `process_inbox.py` | The flow: pending emails -> Claude -> drafts. Depends on an `Inbox` protocol, not on any provider |
-| `main.py` | FastAPI: `/emails`, `/gmail-webhook`, `/outlook-webhook`, `/process`, `/renew-watch` |
+| `agent/demo.py`, `agent/demo.html` | The web demo: access codes, daily limits, input limits and the page itself |
+| `main.py` | FastAPI: `/emails`, `/gmail-webhook`, `/outlook-webhook`, `/process`, `/renew-watch`, `/demo` |
 
 None of the inboxes has a method that sends email.
 
@@ -102,6 +103,29 @@ Each profile has its own system prompt and tools, and is chosen with `--profile`
 |---|---|---|
 | `freelance` (default) | Replies to my own clients. Never promises dates, prices or availability: it leaves gaps like `[fill in: available times]` for me to fill in. | — |
 | `store` | Demo: customer support for an online store, answering from its database. | `find_order` (orders), `find_policy` (returns, shipping, payments…), `search_docs` (FAQ search) |
+| `hr` | Human resources: candidates (applications, hiring status) and employees (vacation, leave, payslips, benefits). Never promises hiring, pay or dates; sensitive topics (harassment, discrimination, health, dismissals, legal claims) get a short empathetic draft that sends the person to HR, plus an `ALERT:` note and high urgency. | — |
+
+## Try it: web demo
+
+`GET /demo` is a web page where anyone with an access code can try the agent without connecting a mailbox. You choose a business type (store, freelance or HR), paste an email and paste some business information (policies, prices, FAQ), and the agent drafts the reply, says whether the email needs one, and classifies it. The page is in English and Spanish.
+
+In the demo the agent has **no tools and no embeddings search**: it answers only from the email and the text you paste. If the text doesn't cover the question, it says so in the internal notes instead of making something up. The pasted text goes into the prompt as reference data inside `<business_information>` tags, fenced like the email, so instructions hidden in it are not followed.
+
+To turn it on, set:
+
+```
+DEMO_ACCESS_CODES=mili:300,guest:20    # code:drafts per UTC day, comma separated
+DEMO_MODEL=claude-sonnet-5-5           # optional, this is the default
+```
+
+Without `DEMO_ACCESS_CODES` the demo is off (`GET /demo` says so and `POST /demo/draft` returns 503). Notes:
+
+- **The daily limit is kept in memory**, per code and UTC date: it starts again from zero with every deploy or restart (and each server instance counts on its own). It is a spending guard, not an audit trail. A draft that fails doesn't count.
+- Codes are compared in constant time and are never logged. Neither is the text of the emails.
+- Limits: sender 200 characters, subject 300, message 6,000, business information 20,000 (422 above that).
+- With Langfuse on, demo traces carry the `demo` tag and, like production, only metrics (never the text).
+
+`POST /demo/draft` takes JSON `{code, business_type, sender, subject, body, business_info}` and returns `{needs_reply, draft, internal_notes, intent, urgency, remaining_today, daily_limit}`; 401 invalid code, 429 limit reached, 422 text too long, 503 demo off or Claude busy, 500 no usable draft.
 
 ## Answers from your own data
 
@@ -287,7 +311,7 @@ email gets the "agente" label ──> Gmail watch ──> Pub/Sub topic ──> 
 
 ## Observability
 
-Optional tracing with [Langfuse](https://langfuse.com). Each email becomes one trace (`draft-email`) with every Claude request inside it (model, tokens, cost, time) and every tool call nested under it (`search_docs` as a retriever, the database tools as tools). Each eval case becomes a trace (`eval-case`) with the judge as an evaluator and one score per check, so runs can be filtered by what failed.
+Optional tracing with [Langfuse](https://langfuse.com). Each email becomes one trace (`draft-email`) with every Claude request inside it (model, tokens, cost, time) and every tool call nested under it (`search_docs` as a retriever, the database tools as tools). Each eval case becomes a trace (`eval-case`) with the judge as an evaluator, one score per check (named `<check>_ok`, for example `alert_ok`: 1 means the check passed) and a small result as output (`passed`, `failed_checks`), so runs can be filtered by what failed. The traces are named after the service `ai-email-triage-agent`, and the model that writes the drafts is the `draft_model` metadata.
 
 To turn it on, add the three variables to `.env` (the project's keys are in Langfuse under Settings, API Keys):
 
@@ -321,6 +345,7 @@ uv run pytest
 | `tests/test_tools.py` | Database tools: someone else's order, SQL injection, unknown tool |
 | `tests/test_gmail_parsing.py` | HTML-only emails, quoted replies, thread context, which email still needs a reply |
 | `tests/test_process_inbox.py` | The processing flow with a fake inbox: every email gets its draft, a Claude error only skips that email |
+| `tests/test_demo.py` | Web demo: off without the variable, wrong code (401) and limit (429) never reach Claude, count per code and per day, text limits (422), the pasted text arrives fenced and without tools, the `hr` profile |
 | `tests/test_prompts.py` | Prompts keep the `<email>` block, `ALERT:` and the tool names |
 | `tests/test_webhook.py` | Webhooks, `/process` and renewal: a wrong token never reaches the mailbox, Outlook validation handshake and clientState, token hidden in logs |
 | `tests/test_imap.py` | `ImapInbox` against a fake IMAP server: the whole cycle (pending, draft, not pending, the client writes again), folders by flag, all-mail mode |

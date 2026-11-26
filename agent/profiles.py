@@ -6,7 +6,7 @@ To add a new use case, add a profile here; drafter.py doesn't change.
 
 from dataclasses import dataclass, field
 
-from agent.prompts import FREELANCE_PROMPT, STORE_PROMPT
+from agent.prompts import FREELANCE_PROMPT, HR_PROMPT, STORE_PROMPT
 from agent.tools import TOOL_FIND_ORDER, TOOL_FIND_POLICY, TOOL_SEARCH_DOCS
 
 
@@ -24,4 +24,6 @@ PROFILES = {
     ),
     # Daily use: replies to Fran's clients, no tools (yet)
     "freelance": Profile("freelance", FREELANCE_PROMPT),
+    # Human resources: candidates and employees, answers only from the company information
+    "hr": Profile("hr", HR_PROMPT),
 }

@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Email reply agent demo</title>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --text: #1b2230;
+    --muted: #556072;
+    --border: #c5ccd7;
+    --accent: #2457d6;
+    --accent-text: #ffffff;
+    --soft: #eef2fb;
+    --warn-bg: #fff4e5;
+    --warn-border: #c26a00;
+    --alert-bg: #fdecec;
+    --alert-border: #b42318;
+    --ok: #146c43;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #11151c;
+      --card: #1a202b;
+      --text: #e8ecf3;
+      --muted: #a3aebf;
+      --border: #3a4455;
+      --accent: #7aa2ff;
+      --accent-text: #0b1220;
+      --soft: #222b3b;
+      --warn-bg: #3a2a12;
+      --warn-border: #e0963a;
+      --alert-bg: #3d1a1a;
+      --alert-border: #f08a80;
+      --ok: #6fd3a0;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; line-height: 1.25; }
+  h2 { font-size: 1.05rem; margin: 0 0 12px; }
+  .lead { color: var(--muted); margin: 0 0 16px; }
+  .lang { display: flex; flex: none; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .lang button {
+    border: 0; background: var(--card); color: var(--text); padding: 8px 12px; min-height: 40px;
+    font: inherit; cursor: pointer;
+  }
+  .lang button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); font-weight: 600; }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px; margin-bottom: 16px;
+  }
+  .notice {
+    background: var(--warn-bg); border: 1px solid var(--warn-border); border-radius: 12px;
+    padding: 12px 16px; margin-bottom: 16px; font-size: 0.95rem;
+  }
+  .grid { display: grid; gap: 12px; grid-template-columns: 1fr; }
+  @media (min-width: 600px) { .grid.two { grid-template-columns: 1fr 1fr; } }
+  .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+  .grid .field { margin-bottom: 0; }
+  label, .label { font-weight: 600; font-size: 0.95rem; }
+  .hint { color: var(--muted); font-size: 0.875rem; }
+  input, select, textarea {
+    font: inherit; font-size: 16px; color: var(--text); background: var(--card);
+    border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; width: 100%;
+    min-height: 44px;
+  }
+  textarea { resize: vertical; line-height: 1.45; }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .count { color: var(--muted); font-size: 0.8125rem; text-align: right; }
+  .count.over { color: var(--alert-border); font-weight: 600; }
+  .primary {
+    background: var(--accent); color: var(--accent-text); border: 0; border-radius: 8px;
+    font: inherit; font-weight: 600; padding: 12px 20px; min-height: 48px; cursor: pointer; width: 100%;
+  }
+  .primary:disabled { opacity: 0.6; cursor: progress; }
+  .secondary {
+    background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: 8px;
+    font: inherit; padding: 8px 14px; min-height: 40px; cursor: pointer;
+  }
+  .error {
+    background: var(--alert-bg); border: 1px solid var(--alert-border); border-radius: 8px;
+    padding: 12px 16px; margin-top: 12px;
+  }
+  .status { margin-top: 12px; color: var(--muted); }
+  .badges { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  .badge {
+    background: var(--soft); border: 1px solid var(--border); border-radius: 999px;
+    padding: 4px 12px; font-size: 0.875rem;
+  }
+  .badge strong { font-weight: 600; }
+  .block-title { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 12px 0 6px; }
+  .block-title .label { margin: 0; }
+  .text {
+    white-space: pre-wrap; overflow-wrap: anywhere; background: var(--soft);
+    border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px;
+  }
+  .text.alert { background: var(--alert-bg); border-color: var(--alert-border); }
+  .remaining { color: var(--muted); font-size: 0.9rem; margin-top: 12px; }
+  footer { color: var(--muted); font-size: 0.875rem; }
+  footer a { color: var(--accent); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1 data-i18n="title">Email reply agent</h1>
+      <p class="lead" data-i18n="lead">Paste an email and some business information, and the agent drafts a reply. It never sends anything.</p>
+    </div>
+    <div class="lang" role="group" aria-label="Language / Idioma">
+      <button type="button" id="lang-en" aria-pressed="true" lang="en">EN</button>
+      <button type="button" id="lang-es" aria-pressed="false" lang="es">ES</button>
+    </div>
+  </header>
+
+  <div class="notice" role="note">
+    <strong data-i18n="privacyTitle">Privacy.</strong>
+    <span data-i18n="privacyText">The text you enter is sent to the Anthropic API to write the draft. It is not stored. Please do not paste real sensitive data (IDs, health information, passwords, real employee or candidate records).</span>
+  </div>
+
+  <form id="form" class="card" novalidate>
+    <div class="grid two" style="margin-bottom:12px">
+      <div class="field">
+        <label for="code" data-i18n="code">Access code</label>
+        <input id="code" name="code" type="password" autocomplete="off" required>
+      </div>
+      <div class="field">
+        <label for="profile" data-i18n="type">Business type</label>
+        <select id="profile" name="profile">
+          <option value="store" data-i18n="typeStore">Online store</option>
+          <option value="freelance" data-i18n="typeFreelance">Freelancer / consultant</option>
+          <option value="hr" data-i18n="typeHr">Human resources</option>
+        </select>
+      </div>
+    </div>
+
+    <h2 data-i18n="emailTitle">Email received</h2>
+    <div class="grid two" style="margin-bottom:12px">
+      <div class="field">
+        <label for="sender"><span data-i18n="sender">Sender</span> <span class="hint" data-i18n="optional">(optional)</span></label>
+        <input id="sender" name="sender" type="text" autocomplete="off" data-max="200">
+      </div>
+      <div class="field">
+        <label for="subject" data-i18n="subject">Subject</label>
+        <input id="subject" name="subject" type="text" autocomplete="off" data-max="300">
+      </div>
+    </div>
+    <div class="field">
+      <label for="body" data-i18n="body">Message</label>
+      <textarea id="body" name="body" rows="7" required data-max="6000" aria-describedby="body-count"></textarea>
+      <div class="count" id="body-count"></div>
+    </div>
+
+    <h2 data-i18n="infoTitle">Business information</h2>
+    <div class="field">
+      <label for="info" data-i18n="info">Policies, prices, FAQ</label>
+      <span class="hint" id="info-hint" data-i18n="infoHint">The agent answers only from this text. If something is missing, it says so in the internal notes instead of making it up.</span>
+      <textarea id="info" name="info" rows="11" data-max="20000" aria-describedby="info-hint info-count"></textarea>
+      <div class="count" id="info-count"></div>
+    </div>
+
+    <button class="primary" type="submit" id="submit" data-i18n="submit">Draft reply</button>
+    <div class="status" id="status" role="status" aria-live="polite"></div>
+    <div class="error" id="error" role="alert" hidden></div>
+  </form>
+
+  <section class="card" id="result" aria-labelledby="result-title" hidden>
+    <h2 id="result-title" data-i18n="resultTitle">Result</h2>
+    <div class="badges" id="badges"></div>
+
+    <div id="draft-section">
+      <div class="block-title">
+        <span class="label" id="draft-label" data-i18n="draft">Draft reply</span>
+        <button type="button" class="secondary" id="copy" data-i18n="copy">Copy</button>
+      </div>
+      <div class="text" id="draft" aria-labelledby="draft-label"></div>
+    </div>
+    <p class="hint" id="gap-help" hidden data-i18n="gapHelp"></p>
+    <p id="no-reply" hidden data-i18n="noReply">The agent decided this email does not need a reply, so it wrote no draft.</p>
+
+    <div class="block-title"><span class="label" id="notes-label" data-i18n="notes">Internal notes (for the reviewer)</span></div>
+    <div class="text" id="notes" aria-labelledby="notes-label"></div>
+    <div class="remaining" id="remaining"></div>
+  </section>
+
+  <footer>
+    <span data-i18n="footer">Demo of an open source project.</span>
+    <a href="https://github.com/franMenem/ai-email-triage-agent" rel="noopener noreferrer">GitHub</a>
+  </footer>
+</main>
+
+<script>
+"use strict";
+
+var LIMITS = { sender: 200, subject: 300, body: 6000, info: 20000 };
+
+var I18N = {
+  en: {
+    pageTitle: "Email reply agent demo",
+    title: "Email reply agent",
+    lead: "Paste an email and some business information, and the agent drafts a reply. It never sends anything.",
+    privacyTitle: "Privacy.",
+    privacyText: "The text you enter is sent to the Anthropic API to write the draft. It is not stored. Please do not paste real sensitive data (IDs, health information, passwords, real employee or candidate records).",
+    code: "Access code",
+    type: "Business type",
+    typeStore: "Online store",
+    typeFreelance: "Freelancer / consultant",
+    typeHr: "Human resources",
+    emailTitle: "Email received",
+    sender: "Sender",
+    optional: "(optional)",
+    subject: "Subject",
+    body: "Message",
+    infoTitle: "Business information",
+    info: "Policies, prices, FAQ",
+    infoHint: "The agent answers only from this text. If something is missing, it says so in the internal notes instead of making it up.",
+    submit: "Draft reply",
+    drafting: "Drafting the reply...",
+    resultTitle: "Result",
+    draft: "Draft reply",
+    copy: "Copy",
+    copied: "Copied",
+    copyFailed: "Select and copy manually",
+    notes: "Internal notes (for the reviewer)",
+    noReply: "The agent decided this email does not need a reply, so it wrote no draft.",
+    needsReply: "Needs a reply",
+    yes: "Yes",
+    no: "No",
+    topic: "Topic",
+    urgency: "Urgency",
+    high: "High",
+    medium: "Medium",
+    low: "Low",
+    order_status: "Status of something",
+    return_request: "Return, change or cancel",
+    complaint: "Complaint or problem",
+    general_inquiry: "General question",
+    other: "Other",
+    gapHelp: "Text in square brackets is information the agent didn't have: fill it in before sending.",
+    remaining: "Drafts left today for this code: {n} of {limit} (resets at 00:00 UTC).",
+    footer: "Demo of an open source project.",
+    chars: "{n} / {max} characters",
+    errCode: "That access code is not valid.",
+    errCodeEmpty: "Enter your access code.",
+    errBodyEmpty: "Write the email you received.",
+    errLimit: "This code has no drafts left today. Try again tomorrow (the count resets at 00:00 UTC).",
+    errTooLong: "{field} is too long (maximum {max} characters).",
+    errInvalid: "Something in the form is not valid. Check the fields and try again.",
+    errBusy: "The model is busy or unreachable right now. Please try again in a minute.",
+    errModel: "The model could not write a draft this time. Please try again.",
+    errOff: "The demo is not available right now.",
+    errNetwork: "Could not reach the server. Check your connection and try again.",
+    fields: { sender: "Sender", subject: "Subject", body: "Message", business_info: "Business information", code: "Access code" }
+  },
+  es: {
+    pageTitle: "Demo del agente de respuestas por mail",
+    title: "Agente de respuestas por mail",
+    lead: "Pegá un mail y algo de información del negocio, y el agente redacta una respuesta. Nunca envía nada.",
+    privacyTitle: "Privacidad.",
+    privacyText: "El texto que ingresás se envía a la API de Anthropic para generar el borrador. No se guarda. Por favor no pegues datos sensibles reales (documentos, información de salud, contraseñas, fichas reales de empleados o candidatos).",
+    code: "Código de acceso",
+    type: "Tipo de negocio",
+    typeStore: "Tienda online",
+    typeFreelance: "Freelance / consultor",
+    typeHr: "Recursos humanos",
+    emailTitle: "Mail recibido",
+    sender: "Remitente",
+    optional: "(opcional)",
+    subject: "Asunto",
+    body: "Mensaje",
+    infoTitle: "Información del negocio",
+    info: "Políticas, precios, preguntas frecuentes",
+    infoHint: "El agente responde solo con este texto. Si falta algo, lo avisa en las notas internas en vez de inventarlo.",
+    submit: "Redactar respuesta",
+    drafting: "Redactando la respuesta...",
+    resultTitle: "Resultado",
+    draft: "Borrador de respuesta",
+    copy: "Copiar",
+    copied: "Copiado",
+    copyFailed: "Seleccioná y copiá a mano",
+    notes: "Notas internas (para quien revisa)",
+    noReply: "El agente decidió que este mail no necesita respuesta, así que no redactó ningún borrador.",
+    needsReply: "Necesita respuesta",
+    yes: "Sí",
+    no: "No",
+    topic: "Tema",
+    urgency: "Urgencia",
+    high: "Alta",
+    medium: "Media",
+    low: "Baja",
+    order_status: "Estado de algo",
+    return_request: "Devolución, cambio o cancelación",
+    complaint: "Reclamo o problema",
+    general_inquiry: "Consulta general",
+    other: "Otro",
+    gapHelp: "Los textos entre corchetes son datos que el agente no tenía: completalos antes de enviar.",
+    remaining: "Borradores que le quedan hoy a este código: {n} de {limit} (se reinicia a las 00:00 UTC).",
+    footer: "Demo de un proyecto de código abierto.",
+    chars: "{n} / {max} caracteres",
+    errCode: "Ese código de acceso no es válido.",
+    errCodeEmpty: "Ingresá tu código de acceso.",
+    errBodyEmpty: "Escribí el mail que recibiste.",
+    errLimit: "Este código no tiene más borradores hoy. Probá de nuevo mañana (el contador se reinicia a las 00:00 UTC).",
+    errTooLong: "{field} es demasiado largo (máximo {max} caracteres).",
+    errInvalid: "Algo del formulario no es válido. Revisá los campos y probá de nuevo.",
+    errBusy: "El modelo está ocupado o no responde en este momento. Probá de nuevo en un minuto.",
+    errModel: "El modelo no pudo redactar un borrador esta vez. Probá de nuevo.",
+    errOff: "La demo no está disponible en este momento.",
+    errNetwork: "No se pudo contactar al servidor. Revisá tu conexión y probá de nuevo.",
+    fields: { sender: "El remitente", subject: "El asunto", body: "El mensaje", business_info: "La información del negocio", code: "El código" }
+  }
+};
+
+// What each intent means depends on the profile (see the prompts): store uses the generic
+// labels above; these replace them for the other two.
+var INTENT_LABELS = {
+  hr: {
+    en: { order_status: "Status of a request or application", return_request: "Cancel, reschedule or change data", complaint: "Complaint or sensitive issue", general_inquiry: "General question", other: "Other" },
+    es: { order_status: "Estado de un trámite o postulación", return_request: "Cancelar, reprogramar o cambiar datos", complaint: "Reclamo o tema sensible", general_inquiry: "Consulta general", other: "Otro" }
+  },
+  freelance: {
+    en: { order_status: "How a project is going", return_request: "Cancel, pause or ask for a refund", complaint: "Something isn't working", general_inquiry: "Question, change request or quote", other: "Other" },
+    es: { order_status: "Cómo va un proyecto", return_request: "Cancelar, pausar o pedir reembolso", complaint: "Algo no funciona", general_inquiry: "Consulta, cambio o presupuesto", other: "Otro" }
+  }
+};
+
+function intentLabel(profile, intent) {
+  var own = INTENT_LABELS[profile];
+  return own ? own[lang][intent] : t(intent);
+}
+
+// Example business information, one per profile and language. All of it is made up.
+var EXAMPLES = {
+  hr: {
+    en: [
+      "Company: Acme Studio (about 60 people). HR contact: hr@acme.example",
+      "",
+      "VACATION",
+      "- Full-time employees get 20 working days of paid vacation per year, accrued monthly.",
+      "- Request them in the HR portal at least 2 weeks before the first day. Your manager approves the request and HR confirms it.",
+      "- Your current balance is shown in the HR portal, under \"My time off\".",
+      "- Unused days can be carried over until March 31 of the next year.",
+      "",
+      "SICK LEAVE",
+      "- Tell your manager and HR the same day. A medical certificate is needed from the third day on.",
+      "",
+      "PAYSLIPS AND BENEFITS",
+      "- Payslips are published in the HR portal around the 5th of each month. HR does not send them by email.",
+      "- Benefits: health insurance (after 3 months), remote work on Fridays, training budget of 500 USD per year.",
+      "- HR does not share salary information by email.",
+      "",
+      "HIRING PROCESS",
+      "- Stages: CV review (up to 10 business days), call with HR, technical interview, final interview with the team.",
+      "- Candidates get an answer within 5 business days after the final interview.",
+      "- Open applications are kept for 12 months. Candidates can ask to withdraw their application at any time."
+    ].join("\n"),
+    es: [
+      "Empresa: Acme Studio (unas 60 personas). Contacto de RR. HH.: rrhh@acme.example",
+      "",
+      "VACACIONES",
+      "- El personal de jornada completa tiene 20 días hábiles de vacaciones pagas por año, que se acumulan mes a mes.",
+      "- Se piden en el portal de RR. HH. con al menos 2 semanas de anticipación. El pedido lo aprueba tu responsable y lo confirma RR. HH.",
+      "- Tu saldo actual figura en el portal de RR. HH., en \"Mis licencias\".",
+      "- Los días no usados se pueden trasladar hasta el 31 de marzo del año siguiente.",
+      "",
+      "LICENCIA POR ENFERMEDAD",
+      "- Avisá a tu responsable y a RR. HH. el mismo día. Desde el tercer día hace falta certificado médico.",
+      "",
+      "RECIBOS DE SUELDO Y BENEFICIOS",
+      "- Los recibos se publican en el portal de RR. HH. alrededor del 5 de cada mes. RR. HH. no los envía por mail.",
+      "- Beneficios: obra social (a partir de los 3 meses), trabajo remoto los viernes, presupuesto de capacitación de 500 USD por año.",
+      "- RR. HH. no comparte información de sueldos por mail.",
+      "",
+      "PROCESO DE SELECCIÓN",
+      "- Etapas: revisión del CV (hasta 10 días hábiles), llamada con RR. HH., entrevista técnica y entrevista final con el equipo.",
+      "- Se responde a los candidatos dentro de los 5 días hábiles posteriores a la entrevista final.",
+      "- Las postulaciones espontáneas se guardan 12 meses. Cualquier candidato puede pedir retirar su postulación cuando quiera."
+    ].join("\n")
+  },
+  store: {
+    en: [
+      "Store: Casa Verde, houseplants and pots. Support: help@casaverde.example, Monday to Friday 9:00-18:00.",
+      "",
+      "SHIPPING",
+      "- Orders ship within 2 business days. Delivery takes 3 to 5 business days.",
+      "- Shipping is free for orders over 60 USD; otherwise it costs 6 USD.",
+      "- Once the order ships, the customer gets a tracking link by email.",
+      "",
+      "RETURNS",
+      "- Pots and accessories can be returned within 30 days if they are unused and in their box.",
+      "- Live plants cannot be returned, but if one arrives damaged, send a photo within 48 hours and we will replace it.",
+      "- Refunds go back to the original payment method within 7 business days after we receive the item.",
+      "",
+      "PAYMENT",
+      "- Credit and debit cards, and bank transfer."
+    ].join("\n"),
+    es: [
+      "Tienda: Casa Verde, plantas de interior y macetas. Soporte: ayuda@casaverde.example, de lunes a viernes de 9:00 a 18:00.",
+      "",
+      "ENVÍOS",
+      "- Los pedidos salen dentro de 2 días hábiles. La entrega demora de 3 a 5 días hábiles.",
+      "- El envío es gratis para compras de más de 60 USD; si no, cuesta 6 USD.",
+      "- Cuando el pedido sale, el cliente recibe un link de seguimiento por mail.",
+      "",
+      "DEVOLUCIONES",
+      "- Las macetas y accesorios se pueden devolver dentro de los 30 días si están sin usar y en su caja.",
+      "- Las plantas vivas no se devuelven, pero si una llega dañada, mandá una foto dentro de las 48 horas y la reemplazamos.",
+      "- El reembolso vuelve al medio de pago original dentro de los 7 días hábiles de recibido el producto.",
+      "",
+      "PAGOS",
+      "- Tarjetas de crédito y débito, y transferencia bancaria."
+    ].join("\n")
+  },
+  freelance: {
+    en: [
+      "Freelance AI engineer. Services: chat and voice agents, workflow automations (n8n, APIs, webhooks) and CRM integrations.",
+      "",
+      "HOW I WORK",
+      "- I start with a paid 2-hour discovery call (80 USD), credited to the project if we go ahead.",
+      "- Projects are quoted after the discovery call. I don't give prices by email before that.",
+      "- Payment: 50% upfront, 50% on delivery.",
+      "- I usually reply within 1 business day. I work Monday to Friday, UTC-3.",
+      "",
+      "SUPPORT",
+      "- Bug fixes in delivered work are free for 30 days after delivery.",
+      "- After that, support is billed by the hour."
+    ].join("\n"),
+    es: [
+      "Ingeniero de IA freelance. Servicios: agentes de chat y de voz, automatizaciones (n8n, APIs, webhooks) e integraciones con CRM.",
+      "",
+      "CÓMO TRABAJO",
+      "- Arranco con una llamada de descubrimiento paga de 2 horas (80 USD), que se descuenta del proyecto si seguimos adelante.",
+      "- Los proyectos se cotizan después de esa llamada. No paso precios por mail antes.",
+      "- Pago: 50% por adelantado, 50% al entregar.",
+      "- Respondo en general dentro de 1 día hábil. Trabajo de lunes a viernes, UTC-3.",
+      "",
+      "SOPORTE",
+      "- Los errores del trabajo entregado se corrigen sin costo durante 30 días desde la entrega.",
+      "- Después, el soporte se cobra por hora."
+    ].join("\n")
+  }
+};
+
+var $ = function (id) { return document.getElementById(id); };
+var lang = (navigator.language || "en").toLowerCase().indexOf("es") === 0 ? "es" : "en";
+var infoEdited = false;   // once the visitor types in the information box, examples stop replacing it
+var lastResult = null;    // kept so a language switch can redraw the result
+var statusKey = null;
+
+function t(key, values) {
+  var text = I18N[lang][key];
+  if (text === undefined) { text = I18N.en[key]; }
+  Object.keys(values || {}).forEach(function (name) {
+    text = text.split("{" + name + "}").join(values[name]);
+  });
+  return text;
+}
+
+function applyLanguage() {
+  document.documentElement.lang = lang;
+  document.title = t("pageTitle");
+  document.querySelectorAll("[data-i18n]").forEach(function (el) {
+    el.textContent = t(el.getAttribute("data-i18n"));
+  });
+  $("lang-en").setAttribute("aria-pressed", String(lang === "en"));
+  $("lang-es").setAttribute("aria-pressed", String(lang === "es"));
+  if (!infoEdited) { $("info").value = EXAMPLES[$("profile").value][lang]; }
+  updateCounts();
+  if (statusKey) { $("status").textContent = t(statusKey); }
+  if (lastResult) { showResult(lastResult.data, lastResult.profile); }
+}
+
+function updateCounts() {
+  [["body", "body-count"], ["info", "info-count"]].forEach(function (pair) {
+    var length = $(pair[0]).value.length;
+    var max = LIMITS[pair[0]];
+    var el = $(pair[1]);
+    el.textContent = t("chars", { n: length, max: max });
+    el.classList.toggle("over", length > max);
+  });
+}
+
+function showError(message) {
+  var box = $("error");
+  box.textContent = message || "";
+  box.hidden = !message;
+}
+
+function showResult(data, profile) {
+  lastResult = { data: data, profile: profile };
+  var badges = $("badges");
+  badges.textContent = "";
+  [
+    [t("needsReply"), data.needs_reply ? t("yes") : t("no")],
+    [t("topic"), intentLabel(profile, data.intent)],
+    [t("urgency"), t(data.urgency)]
+  ].forEach(function (pair) {
+    var badge = document.createElement("span");
+    badge.className = "badge";
+    var value = document.createElement("strong");
+    value.textContent = pair[1];
+    badge.append(pair[0] + ": ", value);
+    badges.append(badge);
+  });
+  $("draft-section").hidden = !data.needs_reply;
+  $("no-reply").hidden = data.needs_reply;
+  $("draft").textContent = data.draft;
+  $("gap-help").hidden = !(data.needs_reply && /\[[^\]]+\]/.test(data.draft));
+  $("notes").textContent = data.internal_notes;
+  $("notes").classList.toggle("alert", data.internal_notes.indexOf("ALERT:") === 0);
+  $("remaining").textContent = t("remaining", { n: data.remaining_today, limit: data.daily_limit });
+  $("result").hidden = false;
+}
+
+function messageForFailure(status, detail) {
+  if (status === 401) { return t("errCode"); }
+  if (status === 429) { return t("errLimit"); }
+  if (status === 422) {
+    // FastAPI sends a list of {loc: ["body", field], msg}; say which field is too long
+    var first = Array.isArray(detail) ? detail[0] : null;
+    var field = first && first.loc && first.loc[first.loc.length - 1];
+    var limits = { sender: LIMITS.sender, subject: LIMITS.subject, body: LIMITS.body, business_info: LIMITS.info };
+    if (first && first.type === "string_too_long" && limits[field]) {
+      return t("errTooLong", { field: t("fields")[field], max: limits[field] });
+    }
+    return t("errInvalid");
+  }
+  if (status === 503 && typeof detail === "string" && detail.indexOf("not available") !== -1) { return t("errOff"); }
+  if (status === 503) { return t("errBusy"); }
+  return t("errModel");
+}
+
+async function submit(event) {
+  event.preventDefault();
+  showError("");
+  var code = $("code").value.trim();
+  if (!code) { showError(t("errCodeEmpty")); $("code").focus(); return; }
+  if (!$("body").value.trim()) { showError(t("errBodyEmpty")); $("body").focus(); return; }
+  var tooLong = ["sender", "subject", "body", "info"].filter(function (name) {
+    return $(name).value.length > LIMITS[name];
+  })[0];
+  if (tooLong) {
+    var name = tooLong === "info" ? "business_info" : tooLong;
+    showError(t("errTooLong", { field: t("fields")[name], max: LIMITS[tooLong] }));
+    $(tooLong).focus();
+    return;
+  }
+
+  var button = $("submit");
+  var profile = $("profile").value;
+  button.disabled = true;
+  statusKey = "drafting";
+  $("status").textContent = t("drafting");
+  try {
+    var response = await fetch("/demo/draft", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        code: code,
+        business_type: profile,
+        sender: $("sender").value,
+        subject: $("subject").value,
+        body: $("body").value,
+        business_info: $("info").value
+      })
+    });
+    var data = null;
+    try { data = await response.json(); } catch (e) { data = null; }
+    if (!response.ok) {
+      showError(messageForFailure(response.status, data && data.detail));
+    } else {
+      showResult(data, profile);
+      $("result").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  } catch (e) {
+    showError(t("errNetwork"));
+  } finally {
+    button.disabled = false;
+    statusKey = null;
+    $("status").textContent = "";
+  }
+}
+
+async function copyDraft() {
+  var button = $("copy");
+  var text = $("draft").textContent;
+  var message = t("copied");
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (e) {
+    var area = document.createElement("textarea");
+    area.value = text;
+    document.body.append(area);
+    area.select();
+    try { if (!document.execCommand("copy")) { message = t("copyFailed"); } } catch (e2) { message = t("copyFailed"); }
+    area.remove();
+  }
+  button.textContent = message;
+  setTimeout(function () { button.textContent = t("copy"); }, 2000);
+}
+
+$("form").addEventListener("submit", submit);
+$("copy").addEventListener("click", copyDraft);
+$("lang-en").addEventListener("click", function () { lang = "en"; applyLanguage(); });
+$("lang-es").addEventListener("click", function () { lang = "es"; applyLanguage(); });
+$("profile").addEventListener("change", function () {
+  if (!infoEdited) { $("info").value = EXAMPLES[$("profile").value][lang]; updateCounts(); }
+});
+$("info").addEventListener("input", function () { infoEdited = true; updateCounts(); });
+$("body").addEventListener("input", updateCounts);
+
+$("profile").value = "hr";
+applyLanguage();
+</script>
+</body>
+</html>
