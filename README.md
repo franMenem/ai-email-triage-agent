@@ -51,6 +51,7 @@ There is no state file: an email is skipped once its thread has a draft written 
 | `agent/mail/imap_client.py` | `ImapInbox`: IMAP (read, draft in the Drafts folder) |
 | `agent/mail/inboxes.py` | Picks the mailbox with `MAIL_PROVIDER` |
 | `agent/tracing.py` | Optional Langfuse tracing: one trace per email. Off unless the Langfuse keys are set; the rest of the code only calls its helpers |
+| `evals/langfuse_dataset.py`, `evals/langfuse_experiment.py`, `evals/prompt_variants/` | Evals as a Langfuse dataset and experiments, and prompt variants for them (see [Evals](#evals)) |
 | `process_inbox.py` | The flow: pending emails -> Claude -> drafts. Depends on an `Inbox` protocol, not on any provider |
 | `agent/demo.py`, `agent/demo.html` | The web demo: access codes, daily limits, input limits and the page itself |
 | `main.py` | FastAPI: `/emails`, `/gmail-webhook`, `/outlook-webhook`, `/process`, `/renew-watch`, `/demo` |
@@ -346,6 +347,7 @@ uv run pytest
 | `tests/test_gmail_parsing.py` | HTML-only emails, quoted replies, thread context, which email still needs a reply |
 | `tests/test_process_inbox.py` | The processing flow with a fake inbox: every email gets its draft, a Claude error only skips that email |
 | `tests/test_demo.py` | Web demo: off without the variable, wrong code (401) and limit (429) never reach Claude, count per code and per day, text limits (422), the pasted text arrives fenced and without tools, the `hr` profile |
+| `tests/test_langfuse_experiments.py` | Dataset sync (case to item, same ids, no duplicates, archived cases), the host guard, nothing touches Langfuse without keys, prompt variants only inside the evals, run name and metadata |
 | `tests/test_prompts.py` | Prompts keep the `<email>` block, `ALERT:` and the tool names |
 | `tests/test_webhook.py` | Webhooks, `/process` and renewal: a wrong token never reaches the mailbox, Outlook validation handshake and clientState, token hidden in logs |
 | `tests/test_imap.py` | `ImapInbox` against a fake IMAP server: the whole cycle (pending, draft, not pending, the client writes again), folders by flag, all-mail mode |
@@ -401,6 +403,33 @@ In an earlier run of 20 cases, Sonnet once wrote `ALERT:` in the middle of the n
 In the FAQ cases the model's internal notes illustrate the layers (they are its own account, not a recorded trace). Asked about motorcycle parts, the search returned the wholesale document; the notes say *"It does not answer whether motorcycle parts are sold, so no product availability was confirmed"* and the draft says the team will look into it. Asked about installments, Claude went to `find_policy` instead of the FAQ. In an earlier run of 20 cases, Sonnet once wrote `ALERT:` in the middle of the notes instead of at the start; that format slip is exactly what the evals are for. The detailed answers of each model are in `evals/results/`.
 
 Compare a model with `--model claude-sonnet-5-5`. Next steps: several runs per model, harder cases, and a judge for tone, since none of these checks score how well a draft reads.
+
+### Dataset and experiments in Langfuse
+
+To compare two versions of a prompt side by side, the 35 cases also live as a Langfuse **dataset** (`email-triage-cases`) and each eval run can be recorded as an **experiment** on it. `evals/cases.json` stays the source of truth: the dataset is a copy, one item per case (item id = case id, input = profile and email, expected output = what the checks look for, metadata = profile and kind of case). It needs the Langfuse keys from the [Observability](#observability) section, with `LANGFUSE_BASE_URL=https://us.cloud.langfuse.com` (the scripts refuse to run against any other host, so a leftover variable can't send the eval emails somewhere else).
+
+```bash
+# 1. Sync the cases to the dataset. Free (no Claude calls) and safe to repeat: items that
+#    already match are left alone, removed cases are archived. Run it after editing cases.json
+uv run --env-file .env python -m evals.langfuse_dataset            # add --check-host to only print the host
+
+# 2. Run the evals as an experiment (paid: the same calls as a normal --judge run)
+uv run --group rag --env-file .env python -m evals.run_evals --judge \
+    --langfuse-experiment haiku-baseline-2026-11-26 --prompt-version baseline
+```
+
+Every case becomes one trace, linked to its dataset item and to the run, with one score per check (`reply_ok`, `intent_ok`, ... `faithful_ok`, plus `all_checks_ok`) and the pass rate of each check as a score of the run. The run records which model wrote the drafts, which judged them, the prompt version label, a fingerprint of the system prompts that really ran, and the git commit (and whether the working tree had uncommitted changes). The same experiment is also saved in `evals/results/<run name>.json`; the file of the model is not touched. The run is refused if the dataset differs from `cases.json`, so a stale dataset can't pass for the current cases. Use a new run name each time: the same name on the same dataset is the same experiment.
+
+**Trying another prompt without touching production.** A prompt variant is a file `evals/prompt_variants/<name>.py` with one dict, `PROMPTS = {"store": "<the whole system prompt>"}`; the profiles it lists use that prompt and the others keep theirs. `evals/prompt_variants/_example.py` shows the format (it is not a real experiment and can't be selected). The override exists only while the eval runs: `agent/profiles.py` and the server never see it.
+
+```bash
+uv run --group rag --env-file .env python -m evals.run_evals --judge \
+    --langfuse-experiment haiku-shorter-notes-2026-11-27 \
+    --prompt-variant shorter-notes --prompt-version shorter-notes
+```
+
+**Comparing two runs.** In Langfuse open **Experiments**, select the two runs (the baseline and the new one) and open the comparison view, choosing the baseline run as the reference. It shows the score of each check for both runs and lets you open the traces of the cases that got worse, side by side. Compare runs that used the same dataset and the same judge (both are in the run metadata). The cases are few and the model answers differ from run to run, so a change of one or two cases is not a result: repeat each run before drawing a conclusion (see the notes above).
+
 
 ## Stack
 

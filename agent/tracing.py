@@ -96,6 +96,11 @@ def setup(capture_content: bool = False, environment: str = "production") -> boo
     return True
 
 
+def client():
+    """The Langfuse client, or None when tracing is off (the evals run experiments with it)."""
+    return _client
+
+
 def _visible(value):
     return value if _capture_content else HIDDEN
 

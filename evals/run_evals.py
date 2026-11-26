@@ -24,6 +24,17 @@ Run it with (uses the Claude API: each case is a paid call, two with --judge):
     uv run --group rag --env-file .env python -m evals.run_evals --model claude-sonnet-5-5
 
 The detailed result is saved in evals/results/<model>.json.
+
+Langfuse experiments (needs the Langfuse keys, see "Evals" in README.md): after
+syncing the cases with `python -m evals.langfuse_dataset`, add --langfuse-experiment
+to run the same cases as a run of the dataset, comparable with other runs in the UI:
+    uv run --group rag --env-file .env python -m evals.run_evals --judge \
+        --langfuse-experiment haiku-baseline-2026-11-26 --prompt-version baseline
+    uv run --group rag --env-file .env python -m evals.run_evals --judge \
+        --langfuse-experiment haiku-v2-2026-11-27 --prompt-version v2 --prompt-variant v2
+--prompt-variant NAME answers with the prompts of evals/prompt_variants/NAME.py
+instead of the production ones (only during the run). That run is saved in
+evals/results/<run name>.json, so it doesn't overwrite the one of the model.
 """
 
 import argparse
@@ -36,6 +47,7 @@ from pathlib import Path
 from agent import tracing
 from agent.drafter import MODEL, draft_reply
 from agent.models import Email
+from evals import langfuse_guard
 from evals.judge import JUDGE_MODEL, judge
 
 EVALS_DIR = Path(__file__).parent
@@ -137,13 +149,61 @@ async def _run_case(case, model, judge_model):
     }
 
 
-async def main(model, concurrency, judge_model):
-    cases = json.loads((EVALS_DIR / "cases.json").read_text())
-    checks = CHECKS + (["faithful"] if judge_model else [])
+async def run_all(cases, model, concurrency, judge_model):
     semaphore = asyncio.Semaphore(concurrency)
-    results = await asyncio.gather(
+    return await asyncio.gather(
         *(run_case(c, model, semaphore, judge_model) for c in cases)
     )
+
+
+def run_as_experiment(cases, model, concurrency, judge_model, options):
+    """The same cases, run as an experiment on the Langfuse dataset. Returns the
+    results in the order of `cases`, like run_all."""
+    from evals import langfuse_experiment, prompt_variants
+
+    overrides = (
+        prompt_variants.load_variant(options["prompt_variant"])
+        if options["prompt_variant"]
+        else None
+    )
+    with prompt_variants.applied(overrides):
+        metadata = langfuse_experiment.run_metadata(
+            model,
+            judge_model,
+            options["prompt_version"],
+            options["prompt_variant"],
+            prompt_variants.prompts_fingerprint(),
+        )
+        print(f"Run: {options['run_name']} | {metadata}")
+        checks = CHECKS + (["faithful"] if judge_model else [])
+        experiment = langfuse_experiment.run_experiment(
+            tracing.client(),
+            _run_case,
+            checks,
+            cases,
+            options["run_name"],
+            model,
+            judge_model,
+            concurrency,
+            metadata,
+        )
+    print(f"Experiment: {experiment.experiment_url}")
+    by_id = {r.item.id: r.output for r in experiment.item_results}
+    missing = [c["id"] for c in cases if c["id"] not in by_id]
+    if missing:
+        # An item that crashed has no result: it must not look like a pass
+        print(f"WARNING: no result for {missing}: sync the dataset or rerun")
+    options["metadata"] = metadata
+    return [by_id.get(c["id"], {"id": c["id"], "error": "no result"}) for c in cases]
+
+
+def main(model, concurrency, judge_model, experiment=None):
+    cases = json.loads((EVALS_DIR / "cases.json").read_text())
+    checks = CHECKS + (["faithful"] if judge_model else [])
+    if experiment:
+        results = run_as_experiment(cases, model, concurrency, judge_model, experiment)
+    else:
+        results = asyncio.run(run_all(cases, model, concurrency, judge_model))
 
     judged = f" | Judge: {judge_model}" if judge_model else ""
     print(f"Model: {model} | Cases: {len(cases)}{judged}\n")
@@ -177,13 +237,15 @@ async def main(model, concurrency, judge_model):
         f" | errors: {errors} | median secs: {median:.1f}"
     )
 
-    out = EVALS_DIR / "results" / f"{model}.json"
+    # An experiment is saved under its own name: it must not overwrite the model's file
+    out = EVALS_DIR / "results" / f"{experiment['run_name'] if experiment else model}.json"
     out.parent.mkdir(exist_ok=True)
     out.write_text(
         json.dumps(
             {
                 "model": model,
                 "judge": judge_model,
+                **({"experiment": experiment["run_name"], **experiment["metadata"]} if experiment else {}),
                 "summary": summary,
                 "perfect": perfect,
                 "errors": errors,
@@ -209,10 +271,43 @@ if __name__ == "__main__":
         metavar="MODEL",
         help=f"also judge each draft for unsupported claims (default judge: {JUDGE_MODEL})",
     )
+    parser.add_argument(
+        "--langfuse-experiment",
+        metavar="RUN_NAME",
+        help="run the cases as an experiment of the Langfuse dataset, with this run name",
+    )
+    parser.add_argument(
+        "--prompt-version",
+        metavar="LABEL",
+        help="label of the prompt version, saved with the run (default: the variant, or 'production')",
+    )
+    parser.add_argument(
+        "--prompt-variant",
+        metavar="NAME",
+        help="answer with evals/prompt_variants/NAME.py instead of the production prompts",
+    )
     args = parser.parse_args()
+
+    experiment = None
+    if args.langfuse_experiment:
+        experiment = {
+            "run_name": args.langfuse_experiment,
+            "prompt_variant": args.prompt_variant,
+            "prompt_version": args.prompt_version or args.prompt_variant or "production",
+        }
+    elif args.prompt_variant or args.prompt_version:
+        parser.error("--prompt-variant and --prompt-version need --langfuse-experiment")
+
+    if langfuse_guard.has_keys():
+        # Eval traces carry full email text: never send them to an unexpected host
+        langfuse_guard.check_environment()
     # The eval emails are made up, so their full text can be traced
     tracing.setup(capture_content=True, environment="evals")
+    if tracing.is_on():
+        langfuse_guard.check_client(tracing.client())
+    elif experiment:
+        parser.error("--langfuse-experiment needs LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY")
     try:
-        asyncio.run(main(args.model, args.concurrency, args.judge))
+        main(args.model, args.concurrency, args.judge, experiment)
     finally:
         tracing.flush()
