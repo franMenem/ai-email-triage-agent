@@ -8,7 +8,9 @@ dependencies = [
     "google-api-python-client>=2.201.0",
     "google-auth-oauthlib>=1.5.0",
     "httpx2>=2.13.1",
+    "langfuse>=5.2.0",
     "msal>=1.39.0",
+    "opentelemetry-instrumentation-anthropic>=0.63.1",
 ]
 
 [tool.fastapi]

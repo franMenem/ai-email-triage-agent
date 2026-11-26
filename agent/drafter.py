@@ -8,6 +8,7 @@ While Claude asks for tools, they run (tools.py) and the results go back to it.
 
 import anthropic
 
+from agent import tracing
 from agent.models import Draft, Email
 from agent.profiles import PROFILES, Profile
 from agent.tools import run_tool
@@ -66,7 +67,13 @@ async def draft_reply(
     """Drafts the reply to one email. If `trace` is a list, every tool call is appended
     to it as {"tool", "input", "result"}: the evals use it to check what Claude did
     instead of taking its word for it."""
-    profile = PROFILES[profile]
+    with tracing.email_trace(email, profile, model) as traced:
+        draft = await _draft(email, PROFILES[profile], model, trace)
+        traced.finish(draft)
+        return draft
+
+
+async def _draft(email: Email, profile: Profile, model: str, trace: list | None):
     thread = (
         f"Earlier messages in this thread (oldest first):\n{email.thread}\n---\n"
         if email.thread
@@ -98,7 +105,9 @@ async def draft_reply(
         tool_results = []
         for block in response.content:
             if block.type == "tool_use":
-                text = run_tool(block.name, block.input, email)
+                with tracing.tool_span(block.name, block.input) as record:
+                    text = run_tool(block.name, block.input, email)
+                    record(text)
                 if trace is not None:
                     trace.append(
                         {"tool": block.name, "input": block.input, "result": text}

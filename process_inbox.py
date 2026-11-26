@@ -19,6 +19,7 @@ from typing import Protocol
 
 import anthropic
 
+from agent import tracing
 from agent.drafter import draft_reply
 from agent.mail.inboxes import open_inbox
 from agent.models import Email
@@ -87,7 +88,12 @@ if __name__ == "__main__":
         "--every", type=int, help="minutes between checks; without it, runs once"
     )
     args = parser.parse_args()
-    if args.every:
-        asyncio.run(watch(args.profile, args.every))
-    else:
-        asyncio.run(process_new_emails(args.profile, open_inbox()))
+    # On only if the Langfuse keys are set; never sends the text of an email
+    tracing.setup()
+    try:
+        if args.every:
+            asyncio.run(watch(args.profile, args.every))
+        else:
+            asyncio.run(process_new_emails(args.profile, open_inbox()))
+    finally:
+        tracing.flush()

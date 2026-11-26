@@ -33,6 +33,7 @@ import statistics
 import time
 from pathlib import Path
 
+from agent import tracing
 from agent.drafter import MODEL, draft_reply
 from agent.models import Email
 from evals.judge import JUDGE_MODEL, judge
@@ -86,39 +87,49 @@ def score(expected, draft, tool_calls=()):
 
 async def run_case(case, model, semaphore, judge_model):
     async with semaphore:  # limits how many calls run at the same time
-        email = Email(message_id=case["id"], **case["email"])
-        tool_calls = []
-        start = time.perf_counter()
+        with tracing.eval_case(case["id"], model) as traced:
+            result = await _run_case(case, model, judge_model)
+            for name, check in result.get("checks", {}).items():
+                traced.score(name, check["passed"], check["detail"])
+            return result
+
+
+async def _run_case(case, model, judge_model):
+    email = Email(message_id=case["id"], **case["email"])
+    tool_calls = []
+    start = time.perf_counter()
+    try:
+        draft = await draft_reply(email, case["profile"], model, trace=tool_calls)
+    except Exception as e:
+        return {"id": case["id"], "error": repr(e), "tool_calls": tool_calls}
+    seconds = round(time.perf_counter() - start, 1)
+    checks = score(case["expected"], draft, tool_calls)
+    if judge_model and not draft.needs_reply:
+        # The note is fixed text from drafter.py: there is no reply to judge
+        checks["faithful"] = (True, "no reply drafted")
+    elif judge_model:
         try:
-            draft = await draft_reply(email, case["profile"], model, trace=tool_calls)
-        except Exception as e:
-            return {"id": case["id"], "error": repr(e), "tool_calls": tool_calls}
-        seconds = round(time.perf_counter() - start, 1)
-        checks = score(case["expected"], draft, tool_calls)
-        if judge_model and not draft.needs_reply:
-            # The note is fixed text from drafter.py: there is no reply to judge
-            checks["faithful"] = (True, "no reply drafted")
-        elif judge_model:
-            try:
+            with tracing.tool_span("judge", draft.draft, as_type="evaluator") as record:
                 verdict = await judge(
                     case["email"], tool_calls, draft.draft, judge_model
                 )
-                checks["faithful"] = (
-                    verdict["faithful"],
-                    f"unsupported={verdict['unsupported_claims']}",
-                )
-            except Exception as e:
-                checks["faithful"] = (False, f"judge error: {e!r}")
-        return {
-            "id": case["id"],
-            "seconds": seconds,
-            "checks": {
-                name: {"passed": ok, "detail": detail}
-                for name, (ok, detail) in checks.items()
-            },
-            "tool_calls": tool_calls,
-            "draft": draft.model_dump(),
-        }
+                record(verdict)
+            checks["faithful"] = (
+                verdict["faithful"],
+                f"unsupported={verdict['unsupported_claims']}",
+            )
+        except Exception as e:
+            checks["faithful"] = (False, f"judge error: {e!r}")
+    return {
+        "id": case["id"],
+        "seconds": seconds,
+        "checks": {
+            name: {"passed": ok, "detail": detail}
+            for name, (ok, detail) in checks.items()
+        },
+        "tool_calls": tool_calls,
+        "draft": draft.model_dump(),
+    }
 
 
 async def main(model, concurrency, judge_model):
@@ -194,4 +205,9 @@ if __name__ == "__main__":
         help=f"also judge each draft for unsupported claims (default judge: {JUDGE_MODEL})",
     )
     args = parser.parse_args()
-    asyncio.run(main(args.model, args.concurrency, args.judge))
+    # The eval emails are made up, so their full text can be traced
+    tracing.setup(capture_content=True, environment="evals")
+    try:
+        asyncio.run(main(args.model, args.concurrency, args.judge))
+    finally:
+        tracing.flush()

@@ -15,6 +15,10 @@ It cannot send email, delete email or change your settings: it doesn't request t
 
 - The text of each email it handles (sender, subject, body and thread) is sent to the Anthropic API so that Claude can write a draft reply. Anthropic processes it under its own terms and privacy policy.
 - The draft is saved in your mailbox, inside the original thread. Nothing is sent to anyone: a person reviews every draft.
+- If you set the Langfuse keys (`LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY`), usage data is also sent to [Langfuse](https://langfuse.com), a third party that stores it under its own terms and privacy policy. It is **off by default**: without the keys nothing is sent. The project uses the US region (`us.cloud.langfuse.com`).
+  - What is sent: the model name, token counts, timings, the intent, urgency and `needs_reply` that Claude assigned, the names of the tools that ran, and the profile used.
+  - What is not sent: the text of the email, the sender, the subject, what the tools returned and the draft. The attributes that could carry them are deleted before anything leaves the server.
+  - The only exception is the evals, which send full content because their emails are made up.
 - The app keeps no database of your emails and writes no copy of them to disk. The server logs record the sender and subject of the emails it processed, and error messages.
 - Your Google sign-in token is stored where you run the app (a local file, or an environment variable on your server). It is never committed to this repository.
 

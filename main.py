@@ -39,11 +39,14 @@ from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel
 
+from agent import tracing
 from agent.drafter import DraftError, draft_reply
 from agent.mail.inboxes import open_inbox
 from agent.models import Email
 from process_inbox import process_new_emails
 
+# On only if the Langfuse keys are set; never sends the text of an email
+tracing.setup()
 app = FastAPI()
 
 

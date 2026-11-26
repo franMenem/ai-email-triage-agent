@@ -50,6 +50,7 @@ There is no state file: an email is skipped once its thread has a draft written 
 | `agent/mail/outlook_client.py` | `OutlookInbox`: Microsoft Graph (read, draft, subscription) |
 | `agent/mail/imap_client.py` | `ImapInbox`: IMAP (read, draft in the Drafts folder) |
 | `agent/mail/inboxes.py` | Picks the mailbox with `MAIL_PROVIDER` |
+| `agent/tracing.py` | Optional Langfuse tracing: one trace per email. Off unless the Langfuse keys are set; the rest of the code only calls its helpers |
 | `process_inbox.py` | The flow: pending emails -> Claude -> drafts. Depends on an `Inbox` protocol, not on any provider |
 | `main.py` | FastAPI: `/emails`, `/gmail-webhook`, `/outlook-webhook`, `/process`, `/renew-watch` |
 
@@ -284,6 +285,25 @@ email gets the "agente" label ──> Gmail watch ──> Pub/Sub topic ──> 
 - Both endpoints are public URLs, so they require `?token=<WEBHOOK_TOKEN>` and refuse everything if it isn't configured. The token is replaced with `***` in the access logs. (A stricter option is Pub/Sub's OIDC authentication, verifying Google's signed token.)
 - On a server, the Gmail login comes from the `GMAIL_TOKEN_JSON` environment variable instead of `token.json`.
 
+## Observability
+
+Optional tracing with [Langfuse](https://langfuse.com). Each email becomes one trace (`draft-email`) with every Claude request inside it (model, tokens, cost, time) and every tool call nested under it (`search_docs` as a retriever, the database tools as tools). Each eval case becomes a trace (`eval-case`) with the judge as an evaluator and one score per check, so runs can be filtered by what failed.
+
+To turn it on, add the three variables to `.env` (the project's keys are in Langfuse under Settings, API Keys):
+
+```
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+LANGFUSE_SECRET_KEY=sk-lf-...
+LANGFUSE_BASE_URL=https://us.cloud.langfuse.com
+```
+
+Without them nothing is traced and `langfuse` is never even imported, so the app, the tests and the deploy work the same.
+
+What leaves the server depends on the mode:
+
+- **Real mailboxes** (`process_inbox.py`, `main.py`): only metrics and labels: model, tokens, time, intent, urgency, `needs_reply`, which tools ran. The text of the email, the sender, the subject, what the tools returned and the draft are not sent: the attributes that could carry them are deleted before anything leaves the server.
+- **Evals** (`evals/run_evals.py`): full content, in the `evals` environment, because the emails are made up.
+
 ## Tests
 
 The tests replace the LLM call with a fake, so they are free, fast and don't need internet. They run on every push with GitHub Actions.
@@ -297,6 +317,7 @@ uv run pytest
 | `tests/test_main.py` | Endpoint: valid email, missing field (422), duplicates don't call the LLM |
 | `tests/test_errors.py` | Claude API errors: 503 when retryable, 500 when not, failed emails can be retried |
 | `tests/test_classification.py` | Intent/urgency: the model and the JSON schema accept the same values |
+| `tests/test_tracing.py` | Langfuse tracing with a fake client: off without keys (`langfuse` not imported), content hidden by default and deleted before export, visible in evals, observation types, eval scores |
 | `tests/test_tools.py` | Database tools: someone else's order, SQL injection, unknown tool |
 | `tests/test_gmail_parsing.py` | HTML-only emails, quoted replies, thread context, which email still needs a reply |
 | `tests/test_process_inbox.py` | The processing flow with a fake inbox: every email gets its draft, a Claude error only skips that email |
@@ -358,7 +379,7 @@ Compare a model with `--model claude-sonnet-5-5`. Next steps: several runs per m
 
 ## Stack
 
-Python 3.12 · Anthropic SDK (Claude, tool calling, structured outputs) · sentence-transformers (embeddings) · Gmail API · Microsoft Graph (MSAL) · IMAP · SQLite · FastAPI · Pydantic · pytest · GitHub Actions · FastAPI Cloud · uv
+Python 3.12 · Anthropic SDK (Claude, tool calling, structured outputs) · sentence-transformers (embeddings) · Gmail API · Microsoft Graph (MSAL) · IMAP · SQLite · FastAPI · Pydantic · pytest · Langfuse (optional) · GitHub Actions · FastAPI Cloud · uv
 
 ## Roadmap
 
