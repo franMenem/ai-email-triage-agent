@@ -416,3 +416,13 @@ def test_an_outdated_dataset_stops_the_experiment():
             client, None, [], CASES, "run", "m", None, 1, {"prompt_version": "v", "git_commit": "x"}
         )
     assert dataset.kwargs is None
+
+
+def test_the_no_unbacked_extras_variant_only_adds_lines_to_the_production_prompts():
+    overrides = prompt_variants.load_variant("no_unbacked_extras")
+    assert set(overrides) == {"store", "freelance"}
+    for name, prompt in overrides.items():
+        production = profiles.PROFILES[name].prompt.splitlines()
+        added = [line for line in prompt.splitlines() if line not in production]
+        assert len(added) == 2
+        assert [line for line in production if line not in prompt.splitlines()] == []
