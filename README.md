@@ -121,7 +121,7 @@ DEMO_MODEL=claude-sonnet-5-5           # optional, this is the default
 Without `DEMO_ACCESS_CODES` the demo is off (`GET /demo` says so and `POST /demo/draft` returns 503). Notes:
 
 - **The daily limit is kept in memory**, per code and UTC date: it starts again from zero with every deploy or restart (and each server instance counts on its own). It is a spending guard, not an audit trail. A draft that fails doesn't count.
-- Codes are compared in constant time and are never logged. Neither is the text of the emails.
+- Codes are compared in constant time. The server logs only the kind of error (the exception class and the API status), never the text of the emails or the access code.
 - Limits: sender 200 characters, subject 300, message 6,000, business information 20,000 (422 above that).
 - With Langfuse on, demo traces carry the `demo` tag and, like production, only metrics (never the text).
 

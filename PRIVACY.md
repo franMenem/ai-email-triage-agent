@@ -24,7 +24,7 @@ It cannot send email, delete email or change your settings: it doesn't request t
 
 ## The public web demo
 
-If the owner turns on the web demo (`/demo`, only with an access code), whoever uses it types or pastes an email and some business information into a web page. That text is sent to the Anthropic API to write the draft, under Anthropic's own terms and privacy policy. It is **not stored**: the server keeps it in memory only while the request runs, and it is not written to disk or to the logs (neither is the access code). If Langfuse is on, the demo traces carry only metrics, never the text. The server keeps in memory only how many drafts each access code used today. Please don't paste real sensitive data into the demo (IDs, health information, passwords, real employee or candidate records): use made-up examples.
+If the owner turns on the web demo (`/demo`, only with an access code), whoever uses it types or pastes an email and some business information into a web page. That text is sent to the Anthropic API to write the draft, under Anthropic's own terms and privacy policy. It is **not stored**: the server keeps it in memory only while the request runs, and it is not written to disk. The server logs only the kind of error, never the text or the access code. If Langfuse is on, the demo traces carry only metrics, never the text. The server keeps in memory only how many drafts each access code used today. Please don't paste real sensitive data into the demo (IDs, health information, passwords, real employee or candidate records): use made-up examples.
 
 ## What it doesn't do
 

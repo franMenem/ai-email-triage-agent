@@ -7,8 +7,11 @@ import json
 from datetime import date
 from types import SimpleNamespace as NS
 
+import anthropic
+import httpx
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 import main
 from agent import demo, drafter
@@ -277,6 +280,101 @@ def test_the_codes_and_the_text_are_never_logged(capsys, caplog):
     everything = seen.out + seen.err + caplog.text
     for secret in ["mili", "SECRET-BODY", "SECRET-INFO", "wrong-code-xyz"]:
         assert secret not in everything
+
+
+def api_status_error(status):
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    return anthropic.APIStatusError(
+        "MARKER-IN-MESSAGE",
+        response=httpx.Response(status, request=request),
+        body={"error": "MARKER-IN-BODY"},
+    )
+
+
+def claude_fails_with(monkeypatch, error):
+    async def broken(**kwargs):
+        raise error
+
+    monkeypatch.setattr(drafter, "client", NS(messages=NS(create=broken)))
+
+
+FAILURES = [
+    (anthropic.APIConnectionError(request=None), 503, "APIConnectionError", None),
+    (api_status_error(429), 503, "APIStatusError", 429),
+    (api_status_error(529), 503, "APIStatusError", 529),
+    (api_status_error(401), 500, "APIStatusError", 401),
+    (api_status_error(404), 500, "APIStatusError", 404),
+    (drafter.DraftError("MARKER-IN-MESSAGE"), 500, "DraftError", None),
+    (RuntimeError("MARKER-IN-MESSAGE"), 500, "RuntimeError", None),
+]
+
+
+@pytest.mark.parametrize("error, status, kind, api_status", FAILURES)
+def test_a_failure_logs_the_kind_of_error_and_nothing_else(
+    monkeypatch, caplog, capsys, error, status, kind, api_status
+):
+    claude_fails_with(monkeypatch, error)
+    with caplog.at_level("ERROR", logger="uvicorn.error"):
+        response = post(code="guest", body="SECRET-BODY", business_info="SECRET-INFO")
+    assert response.status_code == status
+    records = [r for r in caplog.records if r.name == "uvicorn.error"]
+    assert len(records) == 1
+    expected = f"demo draft failed: {kind}"
+    if api_status:
+        expected += f" status={api_status}"
+    assert records[0].getMessage() == expected
+    seen = capsys.readouterr()
+    everything = seen.out + seen.err + caplog.text
+    for secret in ["guest", "SECRET-BODY", "SECRET-INFO", "ana@example.com", "MARKER"]:
+        assert secret not in everything
+
+
+def test_a_validation_error_logs_its_class_only(monkeypatch, caplog):
+    try:
+        Draft(draft="MARKER-IN-MESSAGE", internal_notes="n", intent="bogus", urgency="low")
+    except ValidationError as error:
+        claude_fails_with(monkeypatch, error)
+    with caplog.at_level("ERROR", logger="uvicorn.error"):
+        response = post(code="guest")
+    assert response.status_code == 500
+    assert [r.getMessage() for r in caplog.records] == ["demo draft failed: ValidationError"]
+    assert "MARKER" not in caplog.text
+
+
+def test_an_unexpected_error_gives_the_code_back(monkeypatch):
+    claude_fails_with(monkeypatch, RuntimeError("boom"))
+    assert post(code="guest").status_code == 500
+    assert demo.used_today("guest") == 0
+    claude_answers(monkeypatch)
+    assert post(code="guest").status_code == 200
+
+
+@pytest.mark.parametrize(
+    "error",
+    [api_status_error(400), api_status_error(401), api_status_error(403), api_status_error(404), RuntimeError("x")],
+)
+def test_a_server_the_api_refuses_is_reported_as_misconfigured(monkeypatch, error):
+    claude_fails_with(monkeypatch, error)
+    response = post(code="guest")
+    assert response.status_code == 500
+    assert response.json() == {"detail": "The service is misconfigured"}
+    assert demo.used_today("guest") == 0
+
+
+@pytest.mark.parametrize(
+    "error", [drafter.DraftError("cut off"), ValidationError.from_exception_data("Draft", [])]
+)
+def test_a_draft_that_is_not_usable_keeps_its_own_message(monkeypatch, error):
+    claude_fails_with(monkeypatch, error)
+    response = post(code="guest")
+    assert response.status_code == 500
+    assert response.json() == {"detail": "The model didn't produce a usable draft"}
+
+
+def test_the_page_has_a_message_for_each_kind_of_500():
+    page = client.get("/demo").text
+    assert "The service is misconfigured" in page
+    assert page.count("errConfig:") == 2, "one message in English and one in Spanish"
 
 
 # ------------------------------------------------------------------ the hr profile

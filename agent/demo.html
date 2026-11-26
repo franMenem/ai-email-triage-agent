@@ -260,6 +260,7 @@ var I18N = {
     errInvalid: "Something in the form is not valid. Check the fields and try again.",
     errBusy: "The model is busy or unreachable right now. Please try again in a minute.",
     errModel: "The model could not write a draft this time. Please try again.",
+    errConfig: "The service has a configuration problem. Let whoever gave you the link know.",
     errOff: "The demo is not available right now.",
     errNetwork: "Could not reach the server. Check your connection and try again.",
     fields: { sender: "Sender", subject: "Subject", body: "Message", business_info: "Business information", code: "Access code" }
@@ -317,6 +318,7 @@ var I18N = {
     errInvalid: "Algo del formulario no es válido. Revisá los campos y probá de nuevo.",
     errBusy: "El modelo está ocupado o no responde en este momento. Probá de nuevo en un minuto.",
     errModel: "El modelo no pudo redactar un borrador esta vez. Probá de nuevo.",
+    errConfig: "El servicio tiene un problema de configuración. Avisale a quien te pasó el link.",
     errOff: "La demo no está disponible en este momento.",
     errNetwork: "No se pudo contactar al servidor. Revisá tu conexión y probá de nuevo.",
     fields: { sender: "El remitente", subject: "El asunto", body: "El mensaje", business_info: "La información del negocio", code: "El código" }
@@ -539,6 +541,7 @@ function messageForFailure(status, detail) {
   }
   if (status === 503 && typeof detail === "string" && detail.indexOf("not available") !== -1) { return t("errOff"); }
   if (status === 503) { return t("errBusy"); }
+  if (status === 500 && detail === "The service is misconfigured") { return t("errConfig"); }
   return t("errModel");
 }
 

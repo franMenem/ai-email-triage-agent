@@ -68,6 +68,9 @@ class HideTokenInAccessLogs(logging.Filter):
 
 
 logging.getLogger("uvicorn.access").addFilter(HideTokenInAccessLogs())
+
+# Same logger uvicorn uses for its own messages, so the lines show up with the others
+log = logging.getLogger("uvicorn.error")
 # A set, because the only question is "have I seen this ID?"
 seen_ids = set()
 
@@ -281,6 +284,9 @@ def demo_page():
     return HTMLResponse(demo.PAGE.read_text(encoding="utf-8"), headers=DEMO_PAGE_HEADERS)
 
 
+DEMO_MISCONFIGURED = "The service is misconfigured"
+
+
 @app.post("/demo/draft")
 async def demo_draft(request: demo.DemoRequest):
     # Everything that can be refused is refused before Claude is called (and paid for)
@@ -295,7 +301,9 @@ async def demo_draft(request: demo.DemoRequest):
         raise HTTPException(
             status_code=429, detail="This code has no drafts left today (UTC day)"
         )
-    # No logging in this function: it would print the code or the text of the email
+    # Logging here is limited to the kind of error (the exception class and, for the
+    # API, its HTTP status). Never str(e), the response body, the text of the email,
+    # the business information or the access code: any of them could carry that text.
     email = Email(
         message_id="demo",
         sender=request.sender,
@@ -309,26 +317,33 @@ async def demo_draft(request: demo.DemoRequest):
             demo.demo_model(),
             business_info=request.business_info,
         )
-    except anthropic.APIConnectionError:
+    except anthropic.APIConnectionError as e:
+        log.error("demo draft failed: %s", type(e).__name__)
         demo.release(code)
         raise HTTPException(
             status_code=503, detail="Claude API is unreachable, try again later"
         )
     except anthropic.APIStatusError as e:
+        log.error("demo draft failed: %s status=%s", type(e).__name__, e.status_code)
         demo.release(code)
         if e.status_code == 429 or e.status_code >= 500:
             raise HTTPException(
                 status_code=503, detail="Claude API is busy, try again later"
             )
-        raise HTTPException(
-            status_code=500, detail="The service is not available right now"
-        )
-    except (DraftError, ValidationError):
+        # 400/401/403/404: the API refused the call because of the server's setup
+        # (key, model, request), not because of anything the visitor did
+        raise HTTPException(status_code=500, detail=DEMO_MISCONFIGURED)
+    except (DraftError, ValidationError) as e:
         # Claude answered, but without a usable draft (for example, it ran out of tokens)
+        log.error("demo draft failed: %s", type(e).__name__)
         demo.release(code)
         raise HTTPException(
             status_code=500, detail="The model didn't produce a usable draft"
         )
+    except Exception as e:
+        log.error("demo draft failed: %s", type(e).__name__)
+        demo.release(code)
+        raise HTTPException(status_code=500, detail=DEMO_MISCONFIGURED)
     return {
         "needs_reply": draft.needs_reply,
         "draft": draft.draft,
